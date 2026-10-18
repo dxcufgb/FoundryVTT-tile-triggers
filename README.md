@@ -1,5 +1,11 @@
 # Dxcufgb's Tile Triggers
 
+[![Foundry v13](https://img.shields.io/github/v/release/dxcufgb/FoundryVTT-tile-triggers?label=Foundry%20v13&logo=foundryvirtualtabletop&color=ff6400)](https://github.com/dxcufgb/FoundryVTT-tile-triggers/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/dxcufgb/FoundryVTT-tile-triggers/module.zip?label=downloads&color=blue)](https://github.com/dxcufgb/FoundryVTT-tile-triggers/releases)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/dxcufgb)\
+[![CI](https://img.shields.io/github/actions/workflow/status/dxcufgb/FoundryVTT-tile-triggers/ci.yml?branch=main&label=CI)](https://github.com/dxcufgb/FoundryVTT-tile-triggers/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/dxcufgb/FoundryVTT-tile-triggers)](LICENSE)
+
 Bind triggers to tiles. A pressure plate that stops the rogue in their tracks and asks for a Dexterity save, a hidden tile that reveals an ambush and pauses the game while whispering the GM, a lever that opens the portcullis, a portal that teleports the party to another scene. Draw a tile, add a trigger, add actions.
 
 **Foundry VTT:** v13 · system agnostic, with dnd5e support for saves, checks, skills, damage and conditions (tested with dnd5e 5.2.5)
