@@ -6,6 +6,7 @@ import { MODULE_ID } from "./constants.js";
 import { tileContains, tileShape } from "./geometry.js";
 import { getTriggers, tileActive, shouldFire, dispatch, isEnabled } from "./engine.js";
 import { tileName } from "./actions.js";
+import { isDisarmed } from "./disarm.js";
 
 /* -------------------------------------------- */
 /*  Click triggers                              */
@@ -88,22 +89,45 @@ export function drawIndicators() {
   for (const tile of canvas.scene.tiles) {
     const triggers = getTriggers(tile);
     if (!triggers.length) continue;
+    // Orange = armed and active, muted green dashed = disarmed, grey = switched off
+    const disarmed = isDisarmed(tile);
     const on = tileActive(tile) && triggers.some(t => t.enabled);
-    const color = on ? 0xff8c28 : 0x888888;
+    const color = disarmed ? 0x5fa05f : (on ? 0xff8c28 : 0x888888);
     const g = new PIXI.Graphics();
     const pts = outline(tile);
-    g.lineStyle({ width: 3, color, alpha: 0.9 });
-    g.beginFill(color, 0.06);
+    g.beginFill(color, disarmed ? 0.04 : 0.06);
     g.drawPolygon(pts);
     g.endFill();
+    g.lineStyle({ width: 3, color, alpha: 0.9 });
+    if (disarmed) dashedPolygon(g, pts, 16, 10);
+    else g.drawPolygon(pts);
     layer.addChild(g);
 
-    const label = `⚡ ${tileName(tile) !== game.i18n.localize("DXTT.TileUnnamed") ? `${tileName(tile)} · ` : ""}${triggers.length}`;
+    const name = tileName(tile) !== game.i18n.localize("DXTT.TileUnnamed") ? `${tileName(tile)} · ` : "";
+    const suffix = disarmed ? ` · ${game.i18n.localize("DXTT.Outline.Disarmed")}` : "";
+    const label = `⚡ ${name}${triggers.length}${suffix}`;
     const style = PreciseText.getTextStyle({ fontSize: 22, fill: color, strokeThickness: 4, stroke: 0x111111 });
     const text = new PreciseText(label, style);
     text.position.set(Math.min(...pts.filter((_, i) => i % 2 === 0)) + 6, Math.min(...pts.filter((_, i) => i % 2 === 1)) + 4);
     text.alpha = 0.95;
     layer.addChild(text);
+  }
+}
+
+/** Stroke a closed polygon ([x, y, x, y, ...]) as dashes. */
+function dashedPolygon(g, pts, dash, gap) {
+  const n = pts.length / 2;
+  for (let i = 0; i < n; i++) {
+    const x0 = pts[i * 2], y0 = pts[i * 2 + 1];
+    const x1 = pts[((i + 1) % n) * 2], y1 = pts[((i + 1) % n) * 2 + 1];
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    if (!len) continue;
+    const ux = (x1 - x0) / len, uy = (y1 - y0) / len;
+    for (let d = 0; d < len; d += dash + gap) {
+      const e = Math.min(d + dash, len);
+      g.moveTo(x0 + ux * d, y0 + uy * d);
+      g.lineTo(x0 + ux * e, y0 + uy * e);
+    }
   }
 }
 

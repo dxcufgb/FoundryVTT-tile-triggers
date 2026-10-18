@@ -9,6 +9,7 @@
 import { MODULE_ID, EVENTS, MAX_DEPTH, defaultTrigger } from "./constants.js";
 import { ACTIONS, GROUPS, newAction, normalizeAction, tileName } from "./actions.js";
 import { getTriggers, getState, fire, resetState, triggerTiles } from "./engine.js";
+import { isDisarmed, setDisarmed } from "./disarm.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 const L = key => game.i18n.localize(key);
@@ -69,6 +70,7 @@ export class TileTriggersEditor extends HandlebarsApplicationMixin(ApplicationV2
       copy: TileTriggersEditor.#onCopy,
       paste: TileTriggersEditor.#onPaste,
       resetAll: TileTriggersEditor.#onResetAll,
+      toggleDisarmed: TileTriggersEditor.#onToggleDisarmed,
       save: TileTriggersEditor.#onSave,
       revert: TileTriggersEditor.#onRevert
     }
@@ -172,6 +174,7 @@ export class TileTriggersEditor extends HandlebarsApplicationMixin(ApplicationV2
         img: /\.(webm|mp4|ogv)$/i.test(src) ? null : src,
         count,
         hidden: t.hidden,
+        disarmed: count > 0 && isDisarmed(t),
         active: t.id === this.tileId && scene.id === this.sceneId
       };
     }).sort((a, b) => (b.count > 0) - (a.count > 0) || a.name.localeCompare(b.name));
@@ -199,6 +202,7 @@ export class TileTriggersEditor extends HandlebarsApplicationMixin(ApplicationV2
 
   #renderBody(tile) {
     const d = this.data;
+    const disarmed = isDisarmed(tile);
     const state = getState(tile);
     const triggers = d.triggers.map((t, i) => this.#renderTrigger(t, i, state[t.id])).join("");
     return `
@@ -211,6 +215,10 @@ export class TileTriggersEditor extends HandlebarsApplicationMixin(ApplicationV2
           ${opts({ rectangle: "DXTT.Option.Rectangle", ellipse: "DXTT.Option.Ellipse" }, d.shape)}
         </select>
         <label class="dxtt-check"><input type="checkbox" data-path="active" ${d.active ? "checked" : ""}> ${esc(L("DXTT.App.TileActive"))}</label>
+        <button type="button" class="dxtt-disarm ${disarmed ? "active" : ""}" data-action="toggleDisarmed" aria-pressed="${disarmed}"
+          data-tooltip="${disarmed ? "DXTT.App.DisarmedOnHint" : "DXTT.App.DisarmedOffHint"}">
+          <i class="${disarmed ? "fa-solid fa-square-check" : "fa-regular fa-square"}"></i> <i class="fa-solid fa-shield-halved"></i> ${esc(L("DXTT.App.Disarmed"))}
+        </button>
       </div>
       <div class="dxtt-row dxtt-tools">
         <button type="button" data-action="panTile" data-tooltip="DXTT.App.PanTile"><i class="fa-solid fa-crosshairs"></i></button>
@@ -565,6 +573,12 @@ export class TileTriggersEditor extends HandlebarsApplicationMixin(ApplicationV2
 
   static async #onResetAll() {
     if (this.tile) await resetState(this.tile);
+  }
+
+  /** Disarm / re-arm the tile. Saved at once (it isn't part of the working copy). */
+  static async #onToggleDisarmed() {
+    const tile = this.tile;
+    if (tile) await setDisarmed(tile, !isDisarmed(tile));
   }
 
   static async #onSave() {

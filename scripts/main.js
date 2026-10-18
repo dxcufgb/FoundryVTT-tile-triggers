@@ -11,7 +11,14 @@
  *   .fire(tile, trigger, {token, force}) fire a trigger (by id or name)
  *   .getTriggers(tile) / .setTriggers(tile, triggers)
  *   .resetState(tile, triggerId?)        forget what a trigger has fired for
+ *   .isDisarmed(tile)                    is the tile disarmed?
+ *   .setDisarmed(tile, value, {resetFired})  disarm (true) or re-arm (false) a tile; with
+ *                                        resetFired, re-arming also re-arms its "once" triggers
  *   .registerAction(type, def)           add an action type (see scripts/actions.js)
+ *
+ * A disarmed tile fires nothing automatically (like an inactive one) but GM-forced manual fires still
+ * run. Hooks: "dxcufgbs-tile-triggers.fire" (ctx) when a trigger runs, and
+ * "dxcufgbs-tile-triggers.disarm" (tile, disarmed) whenever a tile is disarmed or re-armed.
  */
 
 import { MODULE_ID, QUERY_ROLL, EVENTS } from "./constants.js";
@@ -19,6 +26,7 @@ import { registerEngine, getTriggers, fire, resetState } from "./engine.js";
 import { ACTIONS, registerAction, promptRoll, tileName } from "./actions.js";
 import { TileTriggersEditor } from "./editor.js";
 import { registerCanvas, drawIndicators } from "./canvas.js";
+import { registerDisarm, isDisarmed, setDisarmed } from "./disarm.js";
 
 const L = key => game.i18n.localize(key);
 const esc = s => foundry.utils.escapeHTML(String(s ?? ""));
@@ -53,6 +61,7 @@ Hooks.once("init", () => {
 
   registerEngine();
   registerCanvas();
+  registerDisarm();
 
   const mod = game.modules.get(MODULE_ID);
   if (mod) {
@@ -62,6 +71,8 @@ Hooks.once("init", () => {
       getTriggers,
       setTriggers: (tile, triggers) => (tile?.document ?? tile).update({ [`flags.${MODULE_ID}.triggers`]: triggers }),
       resetState,
+      isDisarmed,
+      setDisarmed,
       registerAction,
       actions: ACTIONS,
       events: EVENTS
@@ -173,6 +184,21 @@ Hooks.on("renderTileHUD", (hud, html) => {
     TileTriggersEditor.open(tile);
   });
   col.append(btn);
+
+  // Disarm / re-arm (only on tiles that have triggers). The HUD re-renders itself when the flag changes.
+  if (!count) return;
+  const disarmed = isDisarmed(tile);
+  const arm = document.createElement("button");
+  arm.type = "button";
+  arm.className = `control-icon dxtt-hud-arm ${disarmed ? "active" : ""}`;
+  arm.dataset.tooltip = L(disarmed ? "DXTT.HUD.Rearm" : "DXTT.HUD.Disarm");
+  arm.setAttribute("aria-pressed", String(disarmed));
+  arm.innerHTML = `<i class="fa-solid fa-shield-halved"></i>`;
+  arm.addEventListener("click", ev => {
+    ev.preventDefault();
+    setDisarmed(tile, !isDisarmed(tile));
+  });
+  col.append(arm);
 });
 
 /* -------------------------------------------- */

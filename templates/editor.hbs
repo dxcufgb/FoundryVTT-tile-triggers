@@ -5,9 +5,10 @@
     <button type="button" data-action="useSelected"><i class="fa-solid fa-object-group"></i> {{localize "DXTT.App.UseSelectedTile"}}</button>
     <ol class="dxtt-tile-list">
       {{#each tiles}}
-      <li class="{{#if active}}active{{/if}} {{#if hidden}}hidden-tile{{/if}}" data-action="selectTile" data-tile-id="{{id}}">
+      <li class="{{#if active}}active{{/if}} {{#if hidden}}hidden-tile{{/if}} {{#if disarmed}}disarmed{{/if}}" data-action="selectTile" data-tile-id="{{id}}">
         {{#if img}}<img src="{{img}}" alt="">{{else}}<i class="fa-solid fa-film"></i>{{/if}}
         <span class="dxtt-tile-name">{{name}}</span>
+        {{#if disarmed}}<i class="fa-solid fa-shield-halved dxtt-disarmed-badge" data-tooltip="DXTT.App.Disarmed"></i>{{/if}}
         {{#if count}}<span class="dxtt-count" data-tooltip="DXTT.App.TriggerCount"><i class="fa-solid fa-bolt"></i> {{count}}</span>{{/if}}
       </li>
       {{else}}

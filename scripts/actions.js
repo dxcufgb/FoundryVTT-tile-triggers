@@ -17,6 +17,7 @@
 
 import { MODULE_ID, QUERY_ROLL, SOCKET, MAX_DEPTH } from "./constants.js";
 import { tileContains, tokenInside } from "./geometry.js";
+import { isDisarmed, setDisarmed } from "./disarm.js";
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const L = key => game.i18n.localize(key);
@@ -694,6 +695,28 @@ registerAction("toggleTrigger", {
     }
     for (const t of targets) t.enabled = action.mode === "toggle" ? t.enabled === false : action.mode === "enable";
     await tile.update({ [`flags.${MODULE_ID}.triggers`]: list });
+  }
+});
+
+const ARM_MODES = { disarm: "DXTT.Option.Disarm", arm: "DXTT.Option.Arm", toggle: "DXTT.Option.Toggle" };
+
+registerAction("armTile", {
+  label: "DXTT.Action.armTile", icon: "fa-solid fa-shield-halved", group: "flow",
+  fields: [
+    { key: "tile", type: "doc", label: "DXTT.Field.TileThisDefault", docTypes: ["Tile"] },
+    { key: "mode", type: "select", label: "DXTT.Field.Mode", default: "disarm", options: ARM_MODES },
+    { key: "resetFired", type: "checkbox", label: "DXTT.Field.ResetFiredOnArm", hint: "DXTT.Field.ResetFiredOnArmHint", default: true,
+      showIf: a => a.mode !== "disarm" }
+  ],
+  summary: a => {
+    const tile = a.tile ? fromUuidSync(a.tile) : null;
+    return `${L(ARM_MODES[a.mode] ?? ARM_MODES.disarm)}: ${tile ? tileName(tile) : L("DXTT.ThisTile")}`;
+  },
+  async run(action, ctx) {
+    const tile = action.tile ? fromUuidSync(action.tile) : ctx.tile;
+    if (!tile) throw new Error(L("DXTT.Notify.NoTile"));
+    const disarm = action.mode === "toggle" ? !isDisarmed(tile) : action.mode !== "arm";
+    await setDisarmed(tile, disarm, { resetFired: !disarm && action.resetFired !== false });
   }
 });
 

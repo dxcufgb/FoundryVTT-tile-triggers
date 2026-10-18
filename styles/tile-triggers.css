@@ -27,6 +27,9 @@
 .dxtt-editor .dxtt-tile-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dxtt-editor .dxtt-count { color: var(--color-warm-2, #ff8c28); font-weight: bold; white-space: nowrap; }
 .dxtt-editor .dxtt-none { cursor: default !important; opacity: 0.7; font-style: italic; }
+.dxtt-editor .dxtt-tile-list li.disarmed .dxtt-tile-name { opacity: 0.6; text-decoration: line-through; text-decoration-color: rgba(95,160,95,0.7); }
+.dxtt-editor .dxtt-tile-list li.disarmed .dxtt-count { color: #5fa05f; }
+.dxtt-editor .dxtt-disarmed-badge { color: #5fa05f; }
 
 /* Main area */
 .dxtt-editor .dxtt-main { overflow-y: auto; padding: 0.6rem 0.8rem; min-height: 0; }
@@ -37,6 +40,8 @@
 .dxtt-editor .dxtt-row > select { width: auto; }
 .dxtt-editor .dxtt-tools button { flex: 0 0 auto; width: auto; padding: 0 0.6rem; }
 .dxtt-editor .dxtt-check { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: normal !important; }
+.dxtt-editor .dxtt-row > .dxtt-disarm { flex: 0 0 auto; width: auto; padding: 0 0.6rem; display: inline-flex; align-items: center; gap: 0.35rem; }
+.dxtt-editor .dxtt-row > .dxtt-disarm.active { color: #8fd18f; border-color: #5fa05f; background: rgba(95,160,95,0.18); box-shadow: 0 0 5px rgba(95,160,95,0.6); }
 .dxtt-editor button { white-space: nowrap; }
 
 /* Trigger cards */
@@ -125,6 +130,7 @@
 
 /* Tile HUD */
 #tile-hud .dxtt-hud.active { color: var(--color-warm-2, #ff8c28); }
+#tile-hud .dxtt-hud-arm.active { color: #8fd18f; border-color: #5fa05f; }
 
 /* Roll prompt (players) */
 .dxtt-roll-dialog .dxtt-roll-prompt { display: flex; gap: 0.7rem; align-items: center; }
