@@ -14,6 +14,7 @@
 import { MODULE_ID, SOCKET, EVENTS, defaultTrigger } from "./constants.js";
 import { tokenInside, samplePath } from "./geometry.js";
 import { runActions } from "./actions.js";
+import { isDisarmed } from "./disarm.js";
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -36,8 +37,12 @@ export function getState(tile) {
   return tile?.flags?.[MODULE_ID]?.state ?? {};
 }
 
+/**
+ * Can the tile's triggers fire automatically? Not when its triggers are switched off ("Triggers on this
+ * tile are active" unticked) or when it is disarmed. GM-forced manual fires ignore this.
+ */
 export function tileActive(tile) {
-  return tile?.flags?.[MODULE_ID]?.disabled !== true;
+  return tile?.flags?.[MODULE_ID]?.disabled !== true && !isDisarmed(tile);
 }
 
 /** Tiles on a scene that have at least one trigger. */

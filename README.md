@@ -51,6 +51,21 @@ Options on every trigger:
 
 The tile itself can be a **rectangle or an ellipse**, rotated or not, and hidden or visible. Hidden tiles still trigger.
 
+## Disarming a tile
+
+When the party finds or disarms a trap, mark the tile **disarmed**. A disarmed tile fires none of its triggers automatically: no enter, leave, stop, combat turn or click triggers. Its "once" triggers keep their fired state. GM manual fires (the ▶ button, `api.fire`) still run, so a tile can carry its own GM buttons such as "T3 — disarmed" and "T3 — re-arm".
+
+Disarmed is a separate state from **Triggers on this tile are active**, so the GM can always tell "this trap was dealt with" from "switched off". A tile that is both disarmed and inactive stays inactive when it is re-armed.
+
+- **Tile HUD:** the 🛡 button (only on tiles with triggers) disarms or re-arms the tile.
+- **Tile Triggers window:** the **Disarmed** toggle in the tile head is saved immediately; it doesn't wait for Save. Disarmed tiles get a shield badge in the tile list.
+- **Outline:** a disarmed tile is drawn with a dashed, muted green outline, and its label ends in "· disarmed".
+- **Action:** **Disarm / arm tile** (`armTile`) disarms, arms or toggles this tile or another one, so a lever can disarm a trap elsewhere. With *Reset fired triggers when arming* (on by default), arming also re-arms the tile's "once" triggers. Arming from the HUD or the window keeps them spent.
+- **API:** `api.isDisarmed(tile)` and `api.setDisarmed(tile, true | false, { resetFired })`.
+- **Hook:** `Hooks.on("dxcufgbs-tile-triggers.disarm", (tile, disarmed) => …)` runs on every client whenever a tile is disarmed or re-armed, whatever did it.
+
+Players never see whether a tile is disarmed.
+
 ## Actions
 
 Actions run in order on the GM's client (a GM must be logged in).
@@ -83,6 +98,7 @@ Actions run in order on the GM's client (a GM must be logged in).
 **Flow**
 - **Wait** a number of seconds.
 - **Enable / disable a trigger**, on this or another tile, or reset what it has fired for.
+- **Disarm / arm tile**, this one or another one (see *Disarming a tile*).
 - **Stop:** skip the remaining actions.
 
 Messages can use `{token}` `{actor}` `{player}` `{tile}` `{trigger}` `{scene}`. After a roll, `{total}` `{dc}` and `{result}` are also available.
@@ -105,10 +121,13 @@ tt.open(tile);                                   // open the editor on a tile
 await tt.fire(tile, "Spike trap", { token });    // fire a trigger by name or id
 tt.getTriggers(tile);                            // read
 await tt.resetState(tile);                       // re-arm "once" triggers
+tt.isDisarmed(tile);                             // true when disarmed
+await tt.setDisarmed(tile, true);                // disarm (false = re-arm)
+await tt.setDisarmed(tile, false, { resetFired: true }); // re-arm and re-arm its "once" triggers
 tt.registerAction("myAction", { label: "My action", icon: "fa-solid fa-star", fields: [...], run: async (action, ctx) => {} });
 ```
 
-The hook `dxcufgbs-tile-triggers.fire` is called with the context each time a trigger runs.
+The hook `dxcufgbs-tile-triggers.fire` is called with the context each time a trigger runs, and `dxcufgbs-tile-triggers.disarm` with `(tile, disarmed)` whenever a tile is disarmed or re-armed.
 
 ## Notes
 

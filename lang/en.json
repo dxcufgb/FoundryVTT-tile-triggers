@@ -83,7 +83,10 @@
       "UnsavedShort": "Unsaved changes",
       "Save": "Save",
       "Discard": "Discard",
-      "Revert": "Revert"
+      "Revert": "Revert",
+      "Disarmed": "Disarmed",
+      "DisarmedOffHint": "Disarm this tile: none of its triggers fire automatically until it is re-armed. GM manual fires still run. Saved immediately.",
+      "DisarmedOnHint": "This tile is disarmed. Click to re-arm it (saved immediately)."
     },
     "Event": {
       "enter": "Token enters tile",
@@ -167,7 +170,9 @@
       "Narrator": "Narrator",
       "Enable": "Enable",
       "Disable": "Disable",
-      "ResetFired": "Reset fired"
+      "ResetFired": "Reset fired",
+      "Disarm": "Disarm",
+      "Arm": "Arm"
     },
     "Field": {
       "RollKind": "Roll",
@@ -214,7 +219,9 @@
       "Macro": "Macro",
       "MacroArgs": "Arguments (text or JSON)",
       "Seconds": "Seconds",
-      "TriggerName": "Trigger name (empty = this trigger)"
+      "TriggerName": "Trigger name (empty = this trigger)",
+      "ResetFiredOnArm": "Reset fired triggers when arming",
+      "ResetFiredOnArmHint": "When the tile is armed, forget what its triggers have fired for, so one-shot (“Once”) traps can fire again."
     },
     "Placeholder": {
       "PromptText": "The flagstone clicks under your foot!",
@@ -247,7 +254,8 @@
       "macro": "Run macro",
       "wait": "Wait",
       "toggleTrigger": "Enable / disable a trigger",
-      "stopActions": "Stop (skip remaining actions)"
+      "stopActions": "Stop (skip remaining actions)",
+      "armTile": "Disarm / arm tile"
     },
     "Roll": {
       "Title": "Roll requested",
@@ -284,7 +292,16 @@
       "Copied": "Copied {n} trigger(s).",
       "Saved": "Tile triggers saved.",
       "Fired": "Fired “{trigger}” (token: {token}).",
-      "TooFar": "Too far away. Move closer to use it."
+      "TooFar": "Too far away. Move closer to use it.",
+      "NoTile": "The tile no longer exists."
+    },
+    "ThisTile": "this tile",
+    "HUD": {
+      "Disarm": "Disarm tile",
+      "Rearm": "Re-arm tile"
+    },
+    "Outline": {
+      "Disarmed": "disarmed"
     }
   }
 }
