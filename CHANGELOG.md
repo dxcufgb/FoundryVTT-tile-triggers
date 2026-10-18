@@ -7,6 +7,7 @@
 - Disarmed tiles get a dashed, muted green GM outline labelled "disarmed".
 - New action **Disarm / arm tile** (`armTile`: `tile`, `mode`, `resetFired`) for this tile or another one. Arming can reset the tile's "once" triggers.
 - API: `isDisarmed(tile)`, `setDisarmed(tile, value, { resetFired })`. Hook: `dxcufgbs-tile-triggers.disarm` (tile, disarmed).
+- The module's settings are GM-only: players no longer see a Tile Triggers section in Configure Settings.
 
 ## 1.0.0
 

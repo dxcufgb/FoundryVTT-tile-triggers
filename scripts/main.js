@@ -80,6 +80,14 @@ Hooks.once("init", () => {
   }
 });
 
+// Settings are GM-only: hide the whole Tile Triggers section from players in Configure Settings.
+// (game.user doesn't exist yet during "init", so this runs at "setup", before any settings window opens.)
+Hooks.once("setup", () => {
+  for (const setting of game.settings.settings.values()) {
+    if (setting.namespace === MODULE_ID && setting.config) setting.config = game.user.isGM;
+  }
+});
+
 /* -------------------------------------------- */
 /*  Left menu (Tiles controls)                  */
 /* -------------------------------------------- */
