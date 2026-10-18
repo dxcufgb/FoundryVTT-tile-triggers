@@ -1,0 +1,35 @@
+<div class="dxtt-wrap">
+<div class="dxtt-root">
+  <aside class="dxtt-side">
+    <h3><i class="fa-solid fa-map"></i> {{sceneName}}</h3>
+    <button type="button" data-action="useSelected"><i class="fa-solid fa-object-group"></i> {{localize "DXTT.App.UseSelectedTile"}}</button>
+    <ol class="dxtt-tile-list">
+      {{#each tiles}}
+      <li class="{{#if active}}active{{/if}} {{#if hidden}}hidden-tile{{/if}}" data-action="selectTile" data-tile-id="{{id}}">
+        {{#if img}}<img src="{{img}}" alt="">{{else}}<i class="fa-solid fa-film"></i>{{/if}}
+        <span class="dxtt-tile-name">{{name}}</span>
+        {{#if count}}<span class="dxtt-count" data-tooltip="DXTT.App.TriggerCount"><i class="fa-solid fa-bolt"></i> {{count}}</span>{{/if}}
+      </li>
+      {{else}}
+      <li class="dxtt-none">{{localize "DXTT.App.NoTiles"}}</li>
+      {{/each}}
+    </ol>
+    <p class="hint">{{localize "DXTT.App.SideHint"}}</p>
+  </aside>
+  <section class="dxtt-main">
+    {{#if otherScene}}<p class="dxtt-warning"><i class="fa-solid fa-triangle-exclamation"></i> {{localize "DXTT.App.OtherScene"}} <strong>{{otherScene}}</strong></p>{{/if}}
+    {{#if hasTile}}
+    {{{body}}}
+    {{else}}
+    <p class="dxtt-empty big"><i class="fa-solid fa-hand-pointer"></i> {{localize "DXTT.App.PickTile"}}</p>
+    {{/if}}
+  </section>
+</div>
+{{#if hasTile}}
+<footer class="dxtt-footer {{#if dirty}}dirty{{/if}}">
+  <span class="dxtt-unsaved"><i class="fa-solid fa-circle"></i> {{localize "DXTT.App.UnsavedShort"}}</span>
+  <button type="button" data-action="revert"><i class="fa-solid fa-rotate-left"></i> {{localize "DXTT.App.Revert"}}</button>
+  <button type="button" class="bright" data-action="save"><i class="fa-solid fa-floppy-disk"></i> {{localize "DXTT.App.Save"}}</button>
+</footer>
+{{/if}}
+</div>

@@ -1,0 +1,137 @@
+/* Dxcufgb's Tile Triggers */
+.dxtt-editor .window-content { padding: 0; overflow: hidden; }
+.dxtt-editor .dxtt-wrap { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.dxtt-editor .dxtt-root { flex: 1; min-height: 0; display: grid; grid-template-columns: 230px 1fr; }
+.dxtt-editor .hint { margin: 0.2rem 0; font-size: var(--font-size-12, 12px); opacity: 0.75; }
+.dxtt-editor .dxtt-empty { opacity: 0.7; font-style: italic; margin: 0.4rem 0; }
+.dxtt-editor .dxtt-empty.small { font-size: var(--font-size-12, 12px); margin: 0.2rem 0; }
+.dxtt-editor .dxtt-empty.big { font-size: var(--font-size-16, 16px); text-align: center; margin-top: 3rem; }
+.dxtt-editor .dxtt-warning { color: var(--color-level-warning, #ee9b3a); margin: 0 0 0.5rem; }
+
+/* Tile list */
+.dxtt-editor .dxtt-side {
+  display: flex; flex-direction: column; gap: 0.4rem; padding: 0.6rem; min-height: 0;
+  border-right: 1px solid var(--color-border, rgba(255,255,255,0.15));
+}
+.dxtt-editor .dxtt-side h3 { margin: 0; font-size: var(--font-size-14, 14px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dxtt-editor .dxtt-tile-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 0; }
+.dxtt-editor .dxtt-tile-list li {
+  display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.35rem; margin-bottom: 2px;
+  border-radius: 4px; cursor: pointer; border: 1px solid transparent;
+}
+.dxtt-editor .dxtt-tile-list li:hover { background: rgba(255,255,255,0.06); }
+.dxtt-editor .dxtt-tile-list li.active { border-color: var(--color-warm-2, #ff6400); background: rgba(255,140,40,0.15); }
+.dxtt-editor .dxtt-tile-list li.hidden-tile { opacity: 0.6; }
+.dxtt-editor .dxtt-tile-list img { width: 32px; height: 32px; object-fit: cover; border: none; border-radius: 3px; flex: 0 0 32px; }
+.dxtt-editor .dxtt-tile-list li > i { width: 32px; text-align: center; }
+.dxtt-editor .dxtt-tile-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dxtt-editor .dxtt-count { color: var(--color-warm-2, #ff8c28); font-weight: bold; white-space: nowrap; }
+.dxtt-editor .dxtt-none { cursor: default !important; opacity: 0.7; font-style: italic; }
+
+/* Main area */
+.dxtt-editor .dxtt-main { overflow-y: auto; padding: 0.6rem 0.8rem; min-height: 0; }
+.dxtt-editor .dxtt-tile-head { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.6rem; }
+.dxtt-editor .dxtt-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.dxtt-editor .dxtt-row > label { white-space: nowrap; font-weight: 600; }
+.dxtt-editor .dxtt-row > input[type=text] { flex: 1; min-width: 10rem; }
+.dxtt-editor .dxtt-row > select { width: auto; }
+.dxtt-editor .dxtt-tools button { flex: 0 0 auto; width: auto; padding: 0 0.6rem; }
+.dxtt-editor .dxtt-check { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: normal !important; }
+.dxtt-editor button { white-space: nowrap; }
+
+/* Trigger cards */
+.dxtt-editor .dxtt-trigger {
+  border: 1px solid var(--color-border, rgba(255,255,255,0.2)); border-left: 4px solid var(--color-warm-2, #ff8c28);
+  border-radius: 6px; margin-bottom: 0.7rem; background: rgba(0,0,0,0.12);
+}
+.dxtt-editor .dxtt-trigger.off { border-left-color: #777; opacity: 0.75; }
+.dxtt-editor .dxtt-trigger > header,
+.dxtt-editor .dxtt-action > header {
+  display: flex; align-items: center; gap: 0.35rem; padding: 0.3rem 0.4rem;
+}
+.dxtt-editor .dxtt-trigger > header { background: rgba(255,140,40,0.10); border-radius: 5px 5px 0 0; flex-wrap: wrap; }
+.dxtt-editor .dxtt-action > header { flex-wrap: wrap; }
+.dxtt-editor .dxtt-trigger > header .dxtt-name { flex: 1; min-width: 7rem; font-weight: bold; }
+.dxtt-editor .dxtt-trigger > header select { width: auto; max-width: 15rem; }
+.dxtt-editor .dxtt-event-icon { color: var(--color-warm-2, #ff8c28); width: 1.2rem; text-align: center; }
+.dxtt-editor header button { flex: 0 0 auto; width: 1.9rem; height: 1.9rem; padding: 0; line-height: 1; }
+.dxtt-editor header input[type=checkbox] { flex: 0 0 auto; margin: 0 0.15rem; }
+.dxtt-editor .dxtt-buttons { display: inline-flex; gap: 2px; align-items: center; margin-left: auto; }
+.dxtt-editor .dxtt-fired { font-size: var(--font-size-12, 12px); padding: 0 0.4rem; border-radius: 8px; background: rgba(255,140,40,0.25); white-space: nowrap; }
+.dxtt-editor .dxtt-trigger-body { padding: 0.4rem 0.6rem 0.6rem; }
+.dxtt-editor .collapsed > .dxtt-trigger-body,
+.dxtt-editor .collapsed > .dxtt-action-body { display: none; }
+.dxtt-editor .dxtt-trigger-body > h4 { margin: 0.6rem 0 0.3rem; border-bottom: 1px solid var(--color-border, rgba(255,255,255,0.15)); font-size: var(--font-size-14, 14px); }
+
+/* Fields */
+.dxtt-editor .dxtt-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0.35rem 0.8rem; align-items: end; }
+.dxtt-editor .dxtt-field { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.dxtt-editor .dxtt-field.wide { grid-column: 1 / -1; }
+.dxtt-editor .dxtt-field.check { justify-content: center; min-height: 2.6rem; }
+.dxtt-editor .dxtt-field > label { font-size: var(--font-size-12, 12px); font-weight: 600; opacity: 0.85; }
+.dxtt-editor .dxtt-field textarea { min-height: 3.5rem; resize: vertical; font-family: inherit; }
+.dxtt-editor .dxtt-file { display: flex; gap: 0.3rem; }
+.dxtt-editor .dxtt-file input { flex: 1; }
+.dxtt-editor .dxtt-file button { flex: 0 0 2.2rem; }
+.dxtt-editor .dxtt-docs { border: 1px dashed var(--color-border, rgba(255,255,255,0.25)); border-radius: 4px; padding: 0.3rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.dxtt-editor .dxtt-docs ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.dxtt-editor .dxtt-docs li { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.1rem 0.4rem; border-radius: 10px; background: rgba(255,255,255,0.08); }
+.dxtt-editor .dxtt-docs li.missing { color: var(--color-level-error, #e05a5a); }
+.dxtt-editor .dxtt-docs li.dxtt-none { background: none; font-size: var(--font-size-12, 12px); opacity: 0.7; font-style: italic; }
+.dxtt-editor .dxtt-docs li a { opacity: 0.7; }
+.dxtt-editor .dxtt-docs li a:hover { opacity: 1; }
+.dxtt-editor .dxtt-docs button { width: auto; align-self: flex-start; padding: 0 0.6rem; }
+
+/* Action cards */
+.dxtt-editor .dxtt-actions { display: flex; flex-direction: column; gap: 0.35rem; }
+.dxtt-editor .dxtt-action { border: 1px solid var(--color-border, rgba(255,255,255,0.18)); border-radius: 5px; background: rgba(255,255,255,0.03); }
+.dxtt-editor .dxtt-action.off { opacity: 0.55; }
+.dxtt-editor .dxtt-action > header { background: rgba(255,255,255,0.05); border-radius: 4px 4px 0 0; }
+.dxtt-editor .dxtt-action > header > i { width: 1.2rem; text-align: center; color: var(--color-warm-2, #ff8c28); }
+.dxtt-editor .dxtt-step { display: inline-block; min-width: 1.3rem; height: 1.3rem; line-height: 1.3rem; text-align: center; border-radius: 50%; background: rgba(255,255,255,0.12); font-size: var(--font-size-12, 12px); }
+.dxtt-editor .dxtt-summary { opacity: 0.7; font-size: var(--font-size-12, 12px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.dxtt-editor .dxtt-action-body { padding: 0.35rem 0.5rem 0.5rem; }
+.dxtt-editor .dxtt-add-action { display: flex; gap: 0.35rem; margin-top: 0.1rem; }
+.dxtt-editor .dxtt-add-action select { flex: 1; }
+.dxtt-editor .dxtt-add-action button { flex: 0 0 auto; width: auto; padding: 0 0.7rem; }
+.dxtt-editor .dxtt-branches { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.5rem; }
+.dxtt-editor .dxtt-branch { border-radius: 5px; padding: 0.3rem 0.4rem; }
+.dxtt-editor .dxtt-branch h5 { margin: 0 0 0.3rem; font-size: var(--font-size-13, 13px); }
+.dxtt-editor .dxtt-branch.success { background: rgba(80,180,90,0.10); border: 1px solid rgba(80,180,90,0.35); }
+.dxtt-editor .dxtt-branch.fail { background: rgba(200,70,70,0.10); border: 1px solid rgba(200,70,70,0.35); }
+.dxtt-editor .dxtt-branch .dxtt-fields { grid-template-columns: 1fr; }
+.dxtt-editor .dxtt-add-trigger { width: 100%; margin-bottom: 0.5rem; }
+
+/* Footer */
+.dxtt-editor .dxtt-footer {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.8rem;
+  border-top: 1px solid var(--color-border, rgba(255,255,255,0.15));
+}
+.dxtt-editor .dxtt-footer button { flex: 0 0 auto; width: auto; padding: 0 1.2rem; }
+.dxtt-editor .dxtt-footer button.bright { flex: 0 0 auto; min-width: 9rem; }
+.dxtt-editor .dxtt-unsaved { margin-right: auto; visibility: hidden; color: var(--color-warm-2, #ff8c28); font-size: var(--font-size-12, 12px); }
+.dxtt-editor .dxtt-unsaved i { font-size: 0.6em; vertical-align: middle; }
+.dxtt-editor .dxtt-footer.dirty .dxtt-unsaved { visibility: visible; }
+.dxtt-editor .dxtt-footer.dirty button.bright { box-shadow: 0 0 6px var(--color-warm-2, #ff6400); border-color: var(--color-warm-2, #ff6400); }
+
+/* Tile configuration tab */
+.dxtt-tab .dxtt-tab-list { list-style: none; margin: 0.4rem 0; padding: 0; }
+.dxtt-tab .dxtt-tab-list li { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0; border-bottom: 1px solid var(--color-border, rgba(255,255,255,0.1)); }
+.dxtt-tab .dxtt-tab-list li.off { opacity: 0.55; }
+.dxtt-tab .dxtt-tab-list li i { width: 1.2rem; text-align: center; color: var(--color-warm-2, #ff8c28); }
+.dxtt-tab .dxtt-tab-list li span { margin-left: auto; opacity: 0.7; font-size: var(--font-size-12, 12px); }
+.dxtt-tab .dxtt-open-editor { margin-top: 0.5rem; }
+.dxtt-tab .dxtt-empty { opacity: 0.7; font-style: italic; }
+
+/* Tile HUD */
+#tile-hud .dxtt-hud.active { color: var(--color-warm-2, #ff8c28); }
+
+/* Roll prompt (players) */
+.dxtt-roll-dialog .dxtt-roll-prompt { display: flex; gap: 0.7rem; align-items: center; }
+.dxtt-roll-dialog .dxtt-roll-prompt img { width: 64px; height: 64px; object-fit: cover; border: none; border-radius: 6px; flex: 0 0 64px; }
+.dxtt-roll-dialog .dxtt-roll-msg { font-style: italic; font-size: var(--font-size-16, 16px); }
+.dxtt-roll-dialog .dxtt-roll-prompt p { margin: 0.25rem 0; }
+
+/* Chat */
+.dxtt-chat ul { margin: 0.2rem 0 0; padding-left: 1.1rem; }
+.dxtt-chat p { margin: 0.2rem 0; }
