@@ -1,0 +1,27 @@
+# CodeRabbit settings for FoundryVTT-tile-triggers.
+# Shared rules come from the central dxcufgb/coderabbit repository (inheritance: true), and CodeRabbit reads
+# the README as code guidelines. Only what is specific to this repository is here.
+# Check the merged result on a pull request with: @coderabbitai configuration
+inheritance: true
+
+reviews:
+  path_instructions:
+    - path: "scripts/engine.js"
+      instructions: |
+        The "fire" socket message comes from any client and is executed by the active GM. Validate every field
+        and never trust the payload's `force` (it bypasses the frequency limit) or `userId` (it decides who
+        triggered it, e.g. for players-only triggers): derive them on the GM side or from the actual sender.
+        A trigger runs once (in-flight keys, runaway guard), and movement triggers wait for the token to arrive.
+    - path: "scripts/actions.js"
+      instructions: |
+        Actions (saves, damage, conditions, pausing, whispers, sounds) run on the GM's client with GM rights:
+        flag any action that takes ids, text or HTML from player input without validating or escaping it.
+    - path: "scripts/**/*.js"
+      instructions: |
+        Only the GM edits triggers. Trigger configs from tile flags are validated before use, so a bad value
+        cannot break the canvas or another trigger.
+    - path: ".github/workflows/{ci,release}.yml"
+      instructions: |
+        Thin callers of dxcufgb/foundry-module-ci, identical in every Foundry module repository. Flag any change
+        here that is not the same change in all modules (it belongs in foundry-module-ci instead), except the
+        pinned SHA of foundry-module-ci itself.
