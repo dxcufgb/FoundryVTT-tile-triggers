@@ -86,8 +86,11 @@ function rollUser(actor) {
   return owners.find(u => u.character?.id === actor.id) ?? owners[0] ?? null;
 }
 
-/** Replace {token}, {actor}, {player}, {tile}, {trigger}, {scene}, {total}, {dc}, {result} in a text. */
-export function fmt(text, ctx, extra = {}) {
+/**
+ * Replace {token}, {actor}, {player}, {tile}, {trigger}, {scene}, {total}, {dc}, {result} in a text.
+ * The values are HTML-escaped, unless `escape` is false for a text that is escaped as a whole later.
+ */
+export function fmt(text, ctx, extra = {}, { escape = true } = {}) {
   const players = ownersOf(ctx.actor, { active: false }).map(u => u.name).join(", ");
   const map = {
     token: ctx.token?.name ?? "",
@@ -100,7 +103,7 @@ export function fmt(text, ctx, extra = {}) {
     ...ctx.vars,
     ...extra
   };
-  return String(text ?? "").replace(/\{(\w+)\}/g, (m, k) => (k in map ? esc(map[k]) : m));
+  return String(text ?? "").replace(/\{(\w+)\}/g, (m, k) => (k in map ? (escape ? esc(map[k]) : String(map[k] ?? "")) : m));
 }
 
 /** The tokens an action works on. */
@@ -208,13 +211,36 @@ export async function rollFor(actor, spec, choice = "normal") {
   return roll ? { total: roll.total } : null;
 }
 
-/** Player side: show the roll prompt and roll. Registered as a user query (see main.js). */
+const ROLL_KINDS = ["save", "ability", "skill", "formula"];
+
+/**
+ * The roll request as the player's client uses it: only known fields, of the right types. It comes from
+ * another client (see main.js), so nothing in it is used as it was sent.
+ */
+export function cleanRollSpec(spec) {
+  if (!spec || typeof spec !== "object") return null;
+  const str = v => (typeof v === "string" ? v : "");
+  const timeout = Number(spec.timeout);
+  return {
+    kind: ROLL_KINDS.includes(spec.kind) ? spec.kind : "formula",
+    ability: str(spec.ability), skill: str(spec.skill), formula: str(spec.formula),
+    dc: Number(spec.dc), showDC: spec.showDC === true, message: str(spec.message),
+    timeout: Number.isFinite(timeout) ? Math.clamp(timeout, 10, 300) : 60
+  };
+}
+
+/**
+ * Player side: show the roll prompt and roll. Registered as a user query (see main.js). `spec.message`
+ * is plain text (placeholders filled in, nothing escaped yet): everything shown here is escaped.
+ */
 export async function promptRoll(actor, spec) {
+  spec = cleanRollSpec(spec);
+  if (!spec) return null;
   const id = `dxtt-roll-${foundry.utils.randomID()}`;
   const dc = spec.showDC ? ` ${game.i18n.format("DXTT.Roll.DC", { dc: spec.dc })}` : "";
   const content = `<div class="dxtt-roll-prompt">
     ${actor.img ? `<img src="${esc(actor.img)}" alt="">` : ""}
-    <div>${spec.message ? `<p class="dxtt-roll-msg">${spec.message}</p>` : ""}
+    <div>${spec.message ? `<p class="dxtt-roll-msg">${esc(spec.message)}</p>` : ""}
     <p>${game.i18n.format("DXTT.Roll.Prompt", { actor: `<strong>${esc(actor.name)}</strong>`, roll: `<strong>${esc(rollLabel(spec))}${esc(dc)}</strong>` })}</p></div>
   </div>`;
   const waiting = foundry.applications.api.DialogV2.wait({
@@ -304,7 +330,8 @@ registerAction("check", {
     if (!tokens.length) return;
     const spec = {
       kind: action.kind, ability: action.ability, skill: action.skill, formula: action.formula,
-      dc: Number(action.dc), showDC: !!action.showDC, message: fmt(action.message, ctx),
+      // Plain text: the player's prompt escapes it (promptRoll)
+      dc: Number(action.dc), showDC: !!action.showDC, message: fmt(action.message, ctx, {}, { escape: false }),
       timeout: game.settings.get(MODULE_ID, "promptTimeout")
     };
     const results = await Promise.all(tokens.map(t => requestRoll(t, spec, action.mode)));

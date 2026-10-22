@@ -3,7 +3,7 @@
  */
 
 import { MODULE_ID } from "./constants.js";
-import { tileContains, tileShape } from "./geometry.js";
+import { tileContains, tileShape, tokenInRange } from "./geometry.js";
 import { getTriggers, tileActive, shouldFire, dispatch, isEnabled } from "./engine.js";
 import { tileName } from "./actions.js";
 import { isDisarmed } from "./disarm.js";
@@ -34,15 +34,6 @@ function onPointerUp(event) {
   handleClick(point, d.controlled);
 }
 
-/** Is the token within `range` grid spaces of the tile (0 = standing on it)? */
-function inRange(token, tile, range) {
-  const g = token.parent.grid;
-  const pad = Math.max(0, Number(range) || 0) * g.size - 1;
-  const tx0 = token.x - pad, ty0 = token.y - pad;
-  const tx1 = token.x + token.width * g.sizeX + pad, ty1 = token.y + token.height * g.sizeY + pad;
-  return tx0 < tile.x + tile.width && tx1 > tile.x && ty0 < tile.y + tile.height && ty1 > tile.y;
-}
-
 function handleClick(point, controlled) {
   const scene = canvas.scene;
   const tiles = scene.tiles
@@ -57,11 +48,11 @@ function handleClick(point, controlled) {
     for (const trigger of getTriggers(tile)) {
       if (!trigger.enabled || trigger.event !== "click") continue;
       const pool = mine.length ? mine : owned;
-      const token = pool.find(t => inRange(t, tile, trigger.clickRange)) ?? null;
+      const token = pool.find(t => tokenInRange(t, tile, trigger.clickRange)) ?? null;
       if (!token && pool.length) { tooFar = true; continue; }
       if (!token && !game.user.isGM) continue;
       if (!shouldFire(tile, trigger, token)) continue;
-      dispatch({ sceneId: scene.id, tileId: tile.id, triggerId: trigger.id, event: "click", tokenId: token?.id ?? null, userId: game.user.id });
+      dispatch({ sceneId: scene.id, tileId: tile.id, triggerId: trigger.id, event: "click", tokenId: token?.id ?? null });
       return;
     }
   }

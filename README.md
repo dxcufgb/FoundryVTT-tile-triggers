@@ -71,7 +71,7 @@ Players never see whether a tile is disarmed.
 Actions run in order on the GM's client (a GM must be logged in).
 
 **Rolls & effects on tokens**
-- **Saving throw / check.** Saving throw, ability check, skill check or any roll formula against a DC. By default the token's player gets a **pop-up** with Disadvantage / Roll / Advantage buttons. If nobody answers in time, or no owner is online, the GM's client rolls for them. Optional extras:
+- **Saving throw / check.** Saving throw, ability check, skill check or any roll formula against a DC. By default the token's player gets a **pop-up** with Disadvantage / Roll / Advantage buttons (its text is shown as plain text). If nobody answers in time, or no owner is online, the GM's client rolls for them. Optional extras:
   - damage on a failure, with half, none or full damage on a success
   - a condition on a failure
   - a GM summary whispered to chat
@@ -118,7 +118,7 @@ Actions on tokens can target **the triggering token**, **all tokens on this tile
 ```js
 const tt = game.modules.get("dxcufgbs-tile-triggers").api;
 tt.open(tile);                                   // open the editor on a tile
-await tt.fire(tile, "Spike trap", { token });    // fire a trigger by name or id
+await tt.fire(tile, "Spike trap", { token });    // fire a trigger by name or id (players: "Manual / macro only" triggers only)
 tt.getTriggers(tile);                            // read
 await tt.resetState(tile);                       // re-arm "once" triggers
 tt.isDisarmed(tile);                             // true when disarmed
@@ -132,6 +132,7 @@ The hook `dxcufgbs-tile-triggers.fire` is called with the context each time a tr
 ## Notes
 
 - Tile flags are visible to players' clients, so a determined player could read a trap's settings from the console.
+- The GM's client checks every event a player's client reports before it runs anything: the trigger's conditions, the event, and that the token is the player's own. Only a GM can force a trigger.
 - On gridded scenes the token stops on a grid space. On gridless scenes it stops just inside the tile's edge.
 - Moves undone with Ctrl+Z, and pasted tokens, don't set off triggers.
 

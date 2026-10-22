@@ -33,6 +33,15 @@ export function tileContains(tile, p) {
   return Math.abs(dx) <= w / 2 && Math.abs(dy) <= h / 2;
 }
 
+/** Is the token within `range` grid spaces of the tile (0 = standing on it)? Used by click triggers. */
+export function tokenInRange(token, tile, range) {
+  const g = token.parent.grid;
+  const pad = Math.max(0, Number(range) || 0) * g.size - 1;
+  const tx0 = token.x - pad, ty0 = token.y - pad;
+  const tx1 = token.x + token.width * g.sizeX + pad, ty1 = token.y + token.height * g.sizeY + pad;
+  return tx0 < tile.x + tile.width && tx1 > tile.x && ty0 < tile.y + tile.height && ty1 > tile.y;
+}
+
 /** The centre of a token if it stood at the given position. */
 export function centerAt(token, pos) {
   if (typeof token.getCenterPoint === "function") return token.getCenterPoint(pos);
