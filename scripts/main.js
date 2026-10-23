@@ -52,10 +52,20 @@ Hooks.once("init", () => {
     onChange: () => { drawIndicators(); ui.controls?.render(); }
   });
 
-  // The roll prompt a GM sends to the player who owns the token
-  CONFIG.queries[QUERY_ROLL] = async ({ actorUuid, spec }) => {
+  // The roll prompt the active GM sends to the player who owns the token (the "Saving throw / check"
+  // action). Only a GM sends it. Foundry's API documents no sender for query handlers: when the handler
+  // is given one (a User in the second argument), it must be a GM; whatever the sender, the prompt only
+  // rolls for an actor this user owns and shows the text escaped.
+  CONFIG.queries[QUERY_ROLL] = async (data, options) => {
+    const sender = options?.user;
+    if (sender != null) {
+      const user = game.users.get(typeof sender === "string" ? sender : sender.id);
+      if (!user?.isGM) return null;
+    }
+    const { actorUuid, spec } = data ?? {};
+    if (typeof actorUuid !== "string") return null;
     const actor = await fromUuid(actorUuid);
-    if (!actor?.isOwner) return null;
+    if (actor?.documentName !== "Actor" || !actor.isOwner) return null;
     return promptRoll(actor, spec);
   };
 

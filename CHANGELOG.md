@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Security: the GM's client no longer trusts what another client sends. Who set off a trigger is taken from Foundry, not from the message, so a player can no longer fire triggers as someone else (placeholders, "token's player(s)" recipients, a macro's `triggerUser`). Only a GM can force a trigger past its conditions. A player's events are checked again on the GM's client: the event must be the trigger's own, the token must be on the tile's scene and belong to that player (clicks: within the click range), and the trigger must be on, the tile active and not disarmed, and "Applies to", combat and "Fires" must allow it. The chance is not rolled twice. GM manual fires (▶, `api.fire`) work as before, also on disarmed and switched-off tiles.
+- Security: only a GM's client can pan other users' cameras.
+- Security: the saving throw / check pop-up shows its text as plain text (HTML is no longer interpreted) and only answers requests from a GM.
+- `api.fire` run by a player fires only "Manual / macro only" triggers, with no token or a token of theirs, and never forced.
+
 ## 1.1.0
 
 - Disarm and re-arm a tile. A disarmed tile fires nothing automatically, but GM manual fires still run. It is kept separate from "Triggers on this tile are active", so dealt-with traps stay recognisable.

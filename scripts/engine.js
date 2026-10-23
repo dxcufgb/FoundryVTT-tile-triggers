@@ -9,10 +9,14 @@
  * movement, the move is cancelled and re-issued so it ends on the first space inside the tile. Once
  * the move is accepted (moveToken) the events are handed to the active GM, who waits until the token
  * has visibly reached the tile and then runs the actions. All actions run on the active GM's client.
+ *
+ * What another client sends over the socket is not trusted: the active GM takes the sender from Foundry
+ * (never from the message), checks the event and the token against the sender, and re-checks the
+ * trigger's conditions unless a GM forced the fire (see handleFire).
  */
 
 import { MODULE_ID, SOCKET, EVENTS, defaultTrigger } from "./constants.js";
-import { tokenInside, samplePath } from "./geometry.js";
+import { tokenInside, tokenInRange, samplePath } from "./geometry.js";
 import { runActions } from "./actions.js";
 import { isDisarmed } from "./disarm.js";
 
@@ -78,14 +82,15 @@ export function tokenMatches(trigger, token) {
   }
 }
 
-function inCombat(token) {
-  if (!token) return !!game.combats.find(c => c.started && c.scene?.id === canvas.scene?.id);
+function inCombat(token, scene) {
+  if (!token) return !!game.combats.find(c => c.started && c.scene?.id === scene?.id);
   return !!game.combats.find(c => c.started && c.combatants.some(cb => cb.tokenId === token.id && cb.sceneId === token.parent?.id));
 }
 
-function combatOk(trigger, token) {
-  if (trigger.combat === "in") return inCombat(token);
-  if (trigger.combat === "out") return !inCombat(token);
+/** `scene` is the tile's scene: without a token, "in combat" means a combat has started there. */
+function combatOk(trigger, token, scene) {
+  if (trigger.combat === "in") return inCombat(token, scene);
+  if (trigger.combat === "out") return !inCombat(token, scene);
   return true;
 }
 
@@ -109,7 +114,7 @@ function frequencyOk(tile, trigger, token) {
 export function shouldFire(tile, trigger, token, { roll = true } = {}) {
   if (!isEnabled() || !trigger.enabled || !tileActive(tile)) return false;
   if (!tokenMatches(trigger, token)) return false;
-  if (!combatOk(trigger, token)) return false;
+  if (!combatOk(trigger, token, tile.parent)) return false;
   if (!frequencyOk(tile, trigger, token)) return false;
   if (roll && Number(trigger.chance) < 100 && Math.random() * 100 >= Number(trigger.chance)) return false;
   return true;
@@ -231,7 +236,7 @@ function onMoveToken(token, movement) {
   if (!events) return;
   pendingMoves.delete(movement.id);
   for (const e of events) {
-    dispatch({ sceneId: token.parent.id, tileId: e.tileId, triggerId: e.triggerId, event: e.event, tokenId: token.id, userId: game.user.id });
+    dispatch({ sceneId: token.parent.id, tileId: e.tileId, triggerId: e.triggerId, event: e.event, tokenId: token.id });
   }
 }
 
@@ -247,7 +252,7 @@ export function fireForToken(token, event) {
       if (trigger.event !== event) continue;
       if (!tokenInside(tile, token, token, trigger.detection)) continue;
       if (!shouldFire(tile, trigger, token)) continue;
-      dispatch({ sceneId: token.parent.id, tileId: tile.id, triggerId: trigger.id, event, tokenId: token.id, userId: game.user.id });
+      dispatch({ sceneId: token.parent.id, tileId: tile.id, triggerId: trigger.id, event, tokenId: token.id });
     }
   }
 }
@@ -266,9 +271,12 @@ function onCombatTurnChange(combat, prior, current) {
 
 let warnedNoGM = 0;
 
-/** Hand an event to the active GM (or run it here if we are the active GM). */
+/**
+ * Hand an event to the active GM (or run it here if we are the active GM). The active GM learns who
+ * sent it from Foundry, so the payload carries no user.
+ */
 export function dispatch(payload) {
-  if (game.user.isActiveGM) return handleFire(payload);
+  if (game.user.isActiveGM) return handleFire(payload, game.user);
   if (!game.users.activeGM) {
     if (Date.now() - warnedNoGM > 30000) {
       warnedNoGM = Date.now();
@@ -312,14 +320,52 @@ function runaway(tokenId) {
   return list.length > 15;
 }
 
-/** GM side: validate and run a fired trigger. */
-export async function handleFire({ sceneId, tileId, triggerId, event, tokenId, userId, force = false }) {
+/**
+ * May `sender` set off this trigger with this event and token? The payload is whatever the sending client
+ * chose, so everything in it is checked here, on the active GM.
+ * - `force` counts only from a GM. A GM-forced manual fire skips the conditions (disarmed and switched-off
+ *   tiles too), as the ▶ button and api.fire always did.
+ * - The event must be the trigger's own one; only a GM may fire any trigger as "manual".
+ * - Players: combat turn events never come from them (the active GM finds those itself). Movement and click
+ *   events need a token, and any token must be one the player owns; a click must be within the trigger's
+ *   click range.
+ * - Unless forced, the trigger's conditions are checked again (enabled, tile active, "Applies to", combat,
+ *   frequency). The chance was rolled once by the client that saw the event and is not rolled again.
+ * @returns {boolean}
+ */
+function fireAllowed(sender, tile, trigger, event, token, force) {
+  const gm = sender.isGM;
+  if (typeof event !== "string" || !Object.hasOwn(EVENTS, event)) return false;
+  if (event !== trigger.event && !(gm && event === "manual")) return false;
+  if (!gm) {
+    if (event === "turnStart" || event === "turnEnd") return false;
+    if ((EVENTS[event].movement || event === "click") && !token) return false;
+    if (token && !token.testUserPermission(sender, "OWNER")) return false;
+    if (event === "click" && !tokenInRange(token, tile, trigger.clickRange)) return false;
+  }
+  if (gm && force === true) return true;
+  return shouldFire(tile, trigger, token, { roll: false });
+}
+
+/**
+ * Active GM: validate and run a fired trigger.
+ * @param {object} payload   {sceneId, tileId, triggerId, event, tokenId, force} as the sender sent it
+ * @param {User} sender      who sent it, as Foundry reports it (game.user for our own events)
+ */
+async function handleFire({ sceneId, tileId, triggerId, event, tokenId = null, force = false } = {}, sender) {
+  if (!sender) return;
   const scene = game.scenes.get(sceneId);
   const tile = scene?.tiles.get(tileId);
   const trigger = tile ? getTriggers(tile).find(t => t.id === triggerId) : null;
   if (!tile || !trigger) return;
-  const token = tokenId ? scene.tokens.get(tokenId) : null;
-  if (!force && !frequencyOk(tile, trigger, token)) return;
+  if (tokenId !== null && typeof tokenId !== "string") return;
+  const token = tokenId ? scene.tokens.get(tokenId) ?? null : null;
+  // The token must be on the tile's scene. Only a GM's manual fire runs without it, as it always did.
+  if (tokenId && !token && !(sender.isGM && event === "manual")) return;
+  if (!fireAllowed(sender, tile, trigger, event, token, force)) {
+    console.debug(`${MODULE_ID} | refused a "${event}" fire of trigger ${triggerId} from ${sender.name}`);
+    return;
+  }
   if (runaway(tokenId)) {
     ui.notifications.warn(game.i18n.format("DXTT.Notify.Runaway", { token: token?.name ?? "?" }));
     return;
@@ -330,7 +376,7 @@ export async function handleFire({ sceneId, tileId, triggerId, event, tokenId, u
   try {
     if (token && EVENTS[event]?.movement) await waitForArrival(token, tile, trigger, event);
     await recordFired(tile, trigger, token);
-    await execute(tile, trigger, { token, user: game.users.get(userId) ?? game.user, event });
+    await execute(tile, trigger, { token, user: sender, event });
   } finally {
     inflight.delete(key);
   }
@@ -367,6 +413,8 @@ export async function resetState(tile, triggerId = null) {
  * @param {object} [opts]
  * @param {TokenDocument|Token|string} [opts.token]  the token that "set it off"
  * @param {boolean} [opts.force=true]    ignore the trigger's conditions (GM only)
+ * @returns {Promise<boolean>}  false when it does not fire. A player can only fire "Manual / macro only"
+ *                              triggers, never forced, and only with no token or a token they own.
  */
 export async function fire(tileRef, triggerRef, { token = null, force = true } = {}) {
   const tile = typeof tileRef === "string" ? await fromUuid(tileRef) : tileRef?.document ?? tileRef;
@@ -374,8 +422,10 @@ export async function fire(tileRef, triggerRef, { token = null, force = true } =
   if (!tile || !trigger) throw new Error(`${MODULE_ID} | trigger "${triggerRef}" not found`);
   if (typeof token === "string") token = await fromUuid(token);
   token = token?.document ?? token;
+  // Players can fire "Manual / macro only" triggers only, with no token or a token they own (the GM checks it again)
+  if (!game.user.isGM && (trigger.event !== "manual" || (token && !token.isOwner))) return false;
   if (!(force && game.user.isGM) && !shouldFire(tile, trigger, token)) return false;
-  dispatch({ sceneId: tile.parent.id, tileId: tile.id, triggerId: trigger.id, event: "manual", tokenId: token?.id ?? null, userId: game.user.id, force: force && game.user.isGM });
+  dispatch({ sceneId: tile.parent.id, tileId: tile.id, triggerId: trigger.id, event: "manual", tokenId: token?.id ?? null, force: force && game.user.isGM });
   return true;
 }
 
@@ -383,15 +433,43 @@ export async function fire(tileRef, triggerRef, { token = null, force = true } =
 /*  Socket                                      */
 /* -------------------------------------------- */
 
-function onSocket(msg) {
-  switch (msg?.type) {
-    case "fire":
-      if (game.user.isActiveGM) handleFire(msg);
+let warnedNoSender = false;
+
+/**
+ * Who sent a socket message. Foundry's server adds the id of the emitting user after the arguments the
+ * client emitted (socketlib relies on the same). Our messages are one argument, so exactly one more is
+ * expected: a client that adds arguments of its own (to pose as someone else) gets more than one, and a
+ * message without a sender is refused rather than trusted.
+ */
+function socketSender(extra) {
+  const id = extra.length === 1 ? extra[0] : null;
+  const user = typeof id === "string" ? game.users.get(id) ?? null : null;
+  if (!user && !warnedNoSender) {
+    warnedNoSender = true;
+    console.warn(`${MODULE_ID} | ignored a socket message without a known sender`);
+  }
+  return user;
+}
+
+function onSocket(msg, ...extra) {
+  if (!msg || typeof msg !== "object") return;
+  switch (msg.type) {
+    case "fire": {
+      if (!game.user.isActiveGM) return;
+      const sender = socketSender(extra);
+      if (sender) handleFire(msg, sender);
       break;
-    case "pan":
-      if (msg.users?.length && !msg.users.includes(game.user.id)) return;
-      if (canvas.scene?.id === msg.sceneId) canvas.animatePan({ x: msg.x, y: msg.y, scale: msg.scale || undefined, duration: 800 });
+    }
+    case "pan": {
+      // Only a GM's client sends this (the "Pan camera" action)
+      if (!socketSender(extra)?.isGM) return;
+      if (Array.isArray(msg.users) && msg.users.length && !msg.users.includes(game.user.id)) return;
+      const { x, y } = msg;
+      const scale = Number(msg.scale) || 0;
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale)) return;
+      if (canvas.scene?.id === msg.sceneId) canvas.animatePan({ x, y, scale: scale || undefined, duration: 800 });
       break;
+    }
   }
 }
 
