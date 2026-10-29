@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- API: `runActions(list, ctx)` runs an action list the way the module does, so a custom action with `branches: true` can run its own *On success* / *On failure* lists.
+- API: `actions` and `events` are read-only. Each read returns a frozen copy (registered actions included) instead of the module's live lists; add actions with `registerAction`.
+- The placeholder hint under message fields now lists `{user}` (whoever set the trigger off).
+
 ## 1.0.2
 
 - Security: the GM's client no longer trusts what another client sends. Who set off a trigger is taken from Foundry, not from the message, so a player can no longer fire triggers as someone else (placeholders, "token's player(s)" recipients, a macro's `triggerUser`). Only a GM can force a trigger past its conditions. A player's events are checked again on the GM's client: the event must be the trigger's own, the token must be on the tile's scene and belong to that player (clicks: within the click range), and the trigger must be on, the tile active and not disarmed, and "Applies to", combat and "Fires" must allow it. The chance is not rolled twice. GM manual fires (▶, `api.fire`) work as before, also on disarmed and switched-off tiles.

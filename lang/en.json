@@ -70,7 +70,7 @@
       "OnSuccess": "On success",
       "OnFail": "On failure",
       "TooDeep": "Nested too deep for more branches.",
-      "Placeholders": "Placeholders: {token} {actor} {player} {tile} {trigger} {scene}, and after a roll {total} {dc} {result}.",
+      "Placeholders": "Placeholders: {token} {actor} {player} {user} {tile} {trigger} {scene}, and after a roll {total} {dc} {result}.",
       "ShowDoc": "Show",
       "Remove": "Remove",
       "Missing": "Missing",
