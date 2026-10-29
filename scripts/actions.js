@@ -7,7 +7,8 @@
  * def = {
  *   label, icon, group,
  *   fields: [{key, type, label, default, options, docTypes, fileType, min, max, step, showIf(action)}],
- *   branches: true|false,            // has "on success" / "on failure" action lists
+ *   branches: true|false,            // has "on success" / "on failure" action lists (action.success /
+ *                                    // action.fail); run() runs them itself, e.g. with api.runActions
  *   run: async (action, ctx) => {},  // ctx = {tile, trigger, token, actor, user, event, scene, depth, vars}
  *   summary: action => string        // short text for the collapsed card
  * }
@@ -87,7 +88,7 @@ function rollUser(actor) {
 }
 
 /**
- * Replace {token}, {actor}, {player}, {tile}, {trigger}, {scene}, {total}, {dc}, {result} in a text.
+ * Replace {token}, {actor}, {player}, {user}, {tile}, {trigger}, {scene}, {total}, {dc}, {result} in a text.
  * The values are HTML-escaped, unless `escape` is false for a text that is escaped as a whole later.
  */
 export function fmt(text, ctx, extra = {}, { escape = true } = {}) {

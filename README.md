@@ -140,6 +140,7 @@ tt.isDisarmed(tile);                             // true when disarmed
 await tt.setDisarmed(tile, true);                // disarm (false = re-arm)
 await tt.setDisarmed(tile, false, { resetFired: true }); // re-arm and re-arm its "once" triggers
 tt.registerAction("my-module.myAction", def);    // add an action type (see below)
+await tt.runActions(action.success, ctx);        // run an action list, from a custom action's run (see below)
 tt.actions;                                      // every action type, by type: { label, icon, group, fields, branches, run, summary }
 tt.events;                                       // the trigger events, by name: { icon, movement }
 ```
@@ -147,6 +148,7 @@ tt.events;                                       // the trigger events, by name:
 - `tile` is a `TileDocument` (use `tile.document` for a Tile on the canvas). `open`, `fire`, `isDisarmed` and `setDisarmed` also take a tile UUID, `fire` a token UUID.
 - `fire` throws when the tile or the trigger isn't found. A GM's fire is forced past the trigger's conditions (also on disarmed and switched-off tiles) unless `force: false`. A player can only fire "Manual / macro only" triggers, with no token or a token of their own, and never forced. The actions always run on the GM's client.
 - `setTriggers` writes the list as given (no checks): use the trigger shape `getTriggers` returns and give every trigger and action an `id`. Missing trigger options get their defaults when read.
+- `actions` and `events` are read-only: each read returns a frozen copy (actions added with `registerAction` included), never the lists the module uses. Add actions with `registerAction`.
 - `events` keys are the trigger event names: `enter`, `exit`, `stop`, `turnStart`, `turnEnd`, `click`, `manual`.
 
 **Hooks**
@@ -179,7 +181,20 @@ tt.registerAction("my-module.shout", {
 
 - **Fields:** `key`, `type`, `label` (required), and optional `default`, `hint`, `placeholder` and `showIf(action)` (show the field only when it returns true). Types: `text`, `textarea`, `formula`, `number` (with `min`, `max`, `step`), `checkbox`, `select` (with `options`: `{ value: label }`, or a function returning one), `file` (with `fileType`, e.g. `"audio"` or `"imagevideo"`), `doc` (one UUID) and `docs` (an array of UUIDs), both with `docTypes`, e.g. `["Token", "Tile"]`.
 - **run(action, ctx):** `action` holds your field values (numbers as numbers, checkboxes as booleans), `ctx` is the same object the `fire` hook gets. Set `ctx.stop = true` to skip the rest of the trigger's actions. If `run` throws, the GM gets a "failed" notification and the next action runs.
-- **branches: true** gives the action *On success* / *On failure* lists, stored as `action.success` and `action.fail`. Running them is up to your `run`.
+- **branches: true** gives the action *On success* / *On failure* lists, stored as `action.success` and `action.fail`. Running them is up to your `run`: pass the list to `tt.runActions(list, ctx)`, the function the module runs every action list with. Give it a copy of `ctx` with `depth` one higher (nesting stops a few levels down); `vars` you add there become placeholders in the branch's texts.
+
+```js
+tt.registerAction("my-module.coinFlip", {
+  label: "Coin flip",
+  branches: true,
+  run: async (action, ctx) => {
+    const heads = Math.random() < 0.5;
+    const sub = { ...ctx, depth: ctx.depth + 1, vars: { ...ctx.vars, result: heads ? "heads" : "tails" } };
+    await tt.runActions(heads ? action.success : action.fail, sub);
+  }
+});
+```
+
 - Register it on every client, from your `setup` or `ready` hook (the API exists after this module's `init`). The GM's client needs it to run the action and to show it in the editor; a trigger with an unregistered action type skips that action.
 
 **From another module**

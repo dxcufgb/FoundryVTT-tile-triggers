@@ -15,6 +15,8 @@
  *   .setDisarmed(tile, value, {resetFired})  disarm (true) or re-arm (false) a tile; with
  *                                        resetFired, re-arming also re-arms its "once" triggers
  *   .registerAction(type, def)           add an action type (see scripts/actions.js)
+ *   .runActions(list, ctx)               run an action list (a custom action's success / fail branches)
+ *   .actions / .events                   read-only: frozen copies of the action types and trigger events
  *
  * A disarmed tile fires nothing automatically (like an inactive one) but GM-forced manual fires still
  * run. Hooks: "dxcufgbs-tile-triggers.fire" (ctx) when a trigger runs, and
@@ -23,13 +25,23 @@
 
 import { MODULE_ID, QUERY_ROLL, EVENTS } from "./constants.js";
 import { registerEngine, getTriggers, fire, resetState } from "./engine.js";
-import { ACTIONS, registerAction, promptRoll, tileName } from "./actions.js";
+import { ACTIONS, registerAction, runActions, promptRoll, tileName } from "./actions.js";
 import { TileTriggersEditor } from "./editor.js";
 import { registerCanvas, drawIndicators } from "./canvas.js";
 import { registerDisarm, isDisarmed, setDisarmed } from "./disarm.js";
 
 const L = key => game.i18n.localize(key);
 const esc = s => foundry.utils.escapeHTML(String(s ?? ""));
+
+/** A frozen copy of plain data (objects and arrays); functions and other values are kept as they are. */
+function frozenCopy(value) {
+  if (Array.isArray(value)) return Object.freeze(value.map(frozenCopy));
+  const proto = value && typeof value === "object" ? Object.getPrototypeOf(value) : undefined;
+  if (proto === Object.prototype || proto === null) {
+    return Object.freeze(Object.fromEntries(Object.entries(value).map(([k, v]) => [k, frozenCopy(v)])));
+  }
+  return value;
+}
 
 /* -------------------------------------------- */
 /*  Init                                        */
@@ -84,8 +96,10 @@ Hooks.once("init", () => {
       isDisarmed,
       setDisarmed,
       registerAction,
-      actions: ACTIONS,
-      events: EVENTS
+      runActions,
+      // Read-only: copies made on each read, so registered actions show up and nothing changes the live lists
+      get actions() { return frozenCopy(ACTIONS); },
+      get events() { return frozenCopy(EVENTS); }
     };
   }
 });
