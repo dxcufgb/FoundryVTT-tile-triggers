@@ -12,6 +12,8 @@ Bind triggers to tiles. A pressure plate that stops the rogue in their tracks an
 
 **Foundry VTT:** v13 · system agnostic, with dnd5e support for saves, checks, skills, damage and conditions (tested with dnd5e 5.2.5)
 
+**Recommended:** [Sequencer](https://foundryvtt.com/packages/sequencer) for the *Play animation* action. Without it that action only shows a warning; everything else works.
+
 ## Installation
 
 In Foundry: **Add-on Modules → Install Module**, paste this link into **Manifest URL** at the bottom, and click **Install**:
@@ -86,8 +88,8 @@ Actions run in order on the GM's client (a GM must be logged in).
 - **Open / close / lock doors.**
 - **Teleport** to a destination tile, on this scene or another one. Players' views are pulled along.
 - **Change tile image** (an opened trapdoor, a pulled lever).
-- **Pan camera** for the token's player(s), all players or everyone.
-- **Play animation** with Sequencer, e.g. JB2A files at the token or the tile.
+- **Pan camera** for the token's player(s), all players, everyone or only the GM.
+- **Play animation** with Sequencer, e.g. JB2A files at the token or the tile. Needs the Sequencer module; without it the action warns and is skipped.
 
 **Game, chat & media**
 - **Pause / unpause the game.**
@@ -103,7 +105,7 @@ Actions run in order on the GM's client (a GM must be logged in).
 - **Disarm / arm tile**, this one or another one (see *Disarming a tile*).
 - **Stop:** skip the remaining actions.
 
-Messages can use `{token}` `{actor}` `{player}` `{tile}` `{trigger}` `{scene}`. After a roll, `{total}` `{dc}` and `{result}` are also available.
+Messages can use `{token}` `{actor}` `{player}` `{user}` `{tile}` `{trigger}` `{scene}` (`{user}` is whoever set the trigger off). After a roll, `{total}` `{dc}` and `{result}` are also available.
 
 Actions on tokens can target **the triggering token**, **all tokens on this tile**, or **picked tokens**.
 
@@ -115,21 +117,86 @@ Actions on tokens can target **the triggering token**, **all tokens on this tile
 
 **Lever.** Player clicks tile (range 1) → Open / close / lock doors: toggle → Change tile image: the pulled-lever image → Play sound.
 
+## Settings
+
+All settings are GM-only: players don't see a Tile Triggers section in **Configure Settings**.
+
+- **Tile triggers active** (world, on): turns every tile trigger in the world on or off. GM manual fires (▶, `api.fire`) still run.
+- **Roll prompt timeout (seconds)** (world, 60, 10–300): how long a player has to answer a saving throw or check pop-up before the GM's client rolls for them.
+- **Show trigger outlines** (per client, on): draws the GM outlines around tiles with triggers. The outline toggle in the Tiles controls switches the same setting.
+
 ## Macro API
 
 ```js
 const tt = game.modules.get("dxcufgbs-tile-triggers").api;
-tt.open(tile);                                   // open the editor on a tile
-await tt.fire(tile, "Spike trap", { token });    // fire a trigger by name or id (players: "Manual / macro only" triggers only)
-tt.getTriggers(tile);                            // read
-await tt.resetState(tile);                       // re-arm "once" triggers
+await tt.open(tile);                             // GM: open the editor on a tile (no tile = just the window)
+await tt.fire(tile, "Spike trap", { token });    // fire a trigger by name or id → true, or false when it doesn't fire
+await tt.fire(tile, "Spike trap", { token, force: false }); // GM: only fire if the trigger's conditions allow it
+const triggers = tt.getTriggers(tile);           // the tile's triggers, defaults filled in (a copy)
+await tt.setTriggers(tile, triggers);            // GM: replace the tile's triggers
+await tt.resetState(tile);                       // re-arm all "once" triggers on the tile
+await tt.resetState(tile, triggers[0].id);       // re-arm one trigger
 tt.isDisarmed(tile);                             // true when disarmed
 await tt.setDisarmed(tile, true);                // disarm (false = re-arm)
 await tt.setDisarmed(tile, false, { resetFired: true }); // re-arm and re-arm its "once" triggers
-tt.registerAction("myAction", { label: "My action", icon: "fa-solid fa-star", fields: [...], run: async (action, ctx) => {} });
+tt.registerAction("my-module.myAction", def);    // add an action type (see below)
+tt.actions;                                      // every action type, by type: { label, icon, group, fields, branches, run, summary }
+tt.events;                                       // the trigger events, by name: { icon, movement }
 ```
 
-The hook `dxcufgbs-tile-triggers.fire` is called with the context each time a trigger runs, and `dxcufgbs-tile-triggers.disarm` with `(tile, disarmed)` whenever a tile is disarmed or re-armed.
+- `tile` is a `TileDocument` (use `tile.document` for a Tile on the canvas). `open`, `fire`, `isDisarmed` and `setDisarmed` also take a tile UUID, `fire` a token UUID.
+- `fire` throws when the tile or the trigger isn't found. A GM's fire is forced past the trigger's conditions (also on disarmed and switched-off tiles) unless `force: false`. A player can only fire "Manual / macro only" triggers, with no token or a token of their own, and never forced. The actions always run on the GM's client.
+- `setTriggers` writes the list as given (no checks): use the trigger shape `getTriggers` returns and give every trigger and action an `id`. Missing trigger options get their defaults when read.
+- `events` keys are the trigger event names: `enter`, `exit`, `stop`, `turnStart`, `turnEnd`, `click`, `manual`.
+
+**Hooks**
+
+- `Hooks.on("dxcufgbs-tile-triggers.fire", ctx => …)`: a trigger is about to run its actions. Called on the GM's client that runs them. `ctx` is `{ tile, trigger, token, actor, user, event, scene, depth, vars }` (`token` is a TokenDocument or `null`, `user` is who set it off).
+- `Hooks.on("dxcufgbs-tile-triggers.disarm", (tile, disarmed) => …)`: a tile was disarmed or re-armed, whatever did it. Runs on every client.
+
+Both are `callAll`, so they can't cancel anything.
+
+**Custom actions**
+
+`registerAction(type, def)` adds an action type to the **Add action** list (under *Other* unless you give a `group`). Using the type of an existing action replaces it, so prefix yours with your module id.
+
+```js
+tt.registerAction("my-module.shout", {
+  label: "Shout",                        // shown in the list (an i18n key works too)
+  icon: "fa-solid fa-bullhorn",          // optional, default "fa-solid fa-gear"
+  group: "game",                         // optional: "rolls", "scene", "game", "flow" or "other" (default)
+  fields: [                              // optional: what the editor shows, stored on the action under each key
+    { key: "text", type: "text", label: "Text", default: "Who goes there?" },
+    { key: "loud", type: "checkbox", label: "Loud", default: false },
+    { key: "volume", type: "number", label: "Volume", default: 1, min: 0, max: 1, step: 0.1, showIf: a => a.loud }
+  ],
+  summary: a => a.text,                  // optional: short text on the collapsed card
+  run: async (action, ctx) => {          // runs on the GM's client
+    await ChatMessage.create({ content: action.loud ? action.text.toUpperCase() : action.text });
+  }
+});
+```
+
+- **Fields:** `key`, `type`, `label` (required), and optional `default`, `hint`, `placeholder` and `showIf(action)` (show the field only when it returns true). Types: `text`, `textarea`, `formula`, `number` (with `min`, `max`, `step`), `checkbox`, `select` (with `options`: `{ value: label }`, or a function returning one), `file` (with `fileType`, e.g. `"audio"` or `"imagevideo"`), `doc` (one UUID) and `docs` (an array of UUIDs), both with `docTypes`, e.g. `["Token", "Tile"]`.
+- **run(action, ctx):** `action` holds your field values (numbers as numbers, checkboxes as booleans), `ctx` is the same object the `fire` hook gets. Set `ctx.stop = true` to skip the rest of the trigger's actions. If `run` throws, the GM gets a "failed" notification and the next action runs.
+- **branches: true** gives the action *On success* / *On failure* lists, stored as `action.success` and `action.fail`. Running them is up to your `run`.
+- Register it on every client, from your `setup` or `ready` hook (the API exists after this module's `init`). The GM's client needs it to run the action and to show it in the editor; a trigger with an unregistered action type skips that action.
+
+**From another module**
+
+```js
+Hooks.once("ready", () => {
+  const tt = game.modules.get("dxcufgbs-tile-triggers")?.active ? game.modules.get("dxcufgbs-tile-triggers").api : null;
+  if (!tt) return;   // Tile Triggers not installed or not enabled
+  Hooks.on("dxcufgbs-tile-triggers.fire", ctx => console.log(ctx.trigger.name, ctx.token?.name));
+});
+```
+
+Add `{ "id": "dxcufgbs-tile-triggers", "type": "module" }` to `relationships.recommends` in your `module.json`.
+
+**Data**
+
+Triggers live on the tile: `flags["dxcufgbs-tile-triggers"].triggers` (read it with `api.getTriggers`, write it with `api.setTriggers`). `.disarmed` is the disarmed state (use `api.setDisarmed`), `.disabled: true` means "Triggers on this tile are active" is unticked, `.name` is the tile's name in the editor and `.shape` its area (`"rectangle"` or `"ellipse"`). `.state` (what each trigger has fired for) is internal.
 
 ## Notes
 
