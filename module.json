@@ -2,7 +2,7 @@
   "id": "dxcufgbs-tile-triggers",
   "title": "Dxcufgb's Tile Triggers",
   "description": "Bind triggers to tiles. When a token enters, leaves or stops on a tile, a combat turn starts or ends on it, a combat round starts, combat passes an initiative count, or a player clicks it, run actions: reveal hidden tokens, tiles and lights, ask the player for a saving throw or check with success and failure branches, apply damage or conditions, push tokens, shake the screen, pause the game and whisper the GM, teleport, open or lock doors, play sounds and animations (also on a random patch of the tile), show journals, draw from roll tables, run macros or show and hide Canvas Effects areas. A token that is dragged past an 'enters tile' trigger stops on the first space inside the tile. Edit triggers from the tile's Triggers tab, the Tile HUD or the Tile Triggers tool in the Tiles controls.",
-  "version": "1.0.0",
+  "version": "1.2.1",
   "authors": [
     {
       "name": "Dxcufgb",
