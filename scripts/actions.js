@@ -174,12 +174,14 @@ export function randomPatch(tile, scene, w, h, random = Math.random) {
   const start = g.isGridless ? { x: minX, y: minY } : g.getSnappedPoint({ x: minX, y: minY }, { mode: CONST.GRID_SNAPPING_MODES.TOP_LEFT_VERTEX });
   const e = 0.5;
   const inside = (x, y) => [[x + e, y + e], [x + W - e, y + e], [x + W - e, y + H - e], [x + e, y + H - e]].every(([px, py]) => tileContains(tile, { x: px, y: py }));
-  const fits = [];
+  // Pick one of the places that fit, each equally likely, without listing them all (reservoir sampling)
+  let pick = null, n = 0;
   for (let x = start.x; x + W <= maxX + e; x += sx) {
-    for (let y = start.y; y + H <= maxY + e; y += sy) if (inside(x, y)) fits.push({ x, y, width: W, height: H });
-    if (fits.length > 20000) break;
+    for (let y = start.y; y + H <= maxY + e; y += sy) {
+      if (inside(x, y) && random() * ++n < 1) pick = { x, y, width: W, height: H };
+    }
   }
-  return fits.length ? fits[Math.floor(random() * fits.length)] : null;
+  return pick;
 }
 
 const speakerFor = (action, ctx) => (action.speaker === "token" && ctx.token
@@ -706,6 +708,21 @@ export function pushPath(token, push, occupied) {
   return path;
 }
 
+/**
+ * Resolves true when the token's next move has happened on this client, false after `ms` or when cancelled.
+ * @returns {Promise<boolean> & {cancel: () => void}}
+ */
+function nextMoveOf(token, ms = 3000) {
+  let done, id, timer;
+  const promise = new Promise(resolve => {
+    done = value => { Hooks.off("moveToken", id); clearTimeout(timer); resolve(value); };
+  });
+  id = Hooks.on("moveToken", doc => { if (doc === token) done(true); });
+  timer = setTimeout(() => done(false), ms);
+  promise.cancel = () => done(false);
+  return promise;
+}
+
 /** Do two token footprints overlap (by more than a pixel)? */
 function footprintsOverlap(a, b) {
   return a.x < b.x + b.w - 1 && b.x < a.x + a.w - 1 && a.y < b.y + b.h - 1 && b.y < a.y + a.h - 1;
@@ -764,15 +781,21 @@ registerAction("push", {
 
     const g = ctx.scene.grid;
     const footprint = (t, pos = t) => ({ x: pos.x, y: pos.y, w: t.width * g.sizeX, h: t.height * g.sizeY });
+    // Where the tokens pushed so far stand (or may stand): token id -> positions
     const planned = new Map();
     for (const token of tokens) {
-      const others = ctx.scene.tokens.filter(t => t !== token).map(t => footprint(t, planned.get(t.id) ?? t));
+      const others = ctx.scene.tokens.filter(t => t !== token)
+        .flatMap(t => (planned.get(t.id) ?? [t]).map(p => footprint(t, p)));
       const occupied = pos => others.some(o => footprintsOverlap(footprint(token, pos), o));
       const path = pushPath(token, { mode, source, compass, squares }, occupied);
       if (!path.length) continue;
-      planned.set(token.id, path.at(-1));
-      // A normal move (no "displace"), so the tiles it crosses fire their enter / leave / stop triggers
-      await token.move(path.map(p => ({ x: p.x, y: p.y })), { method: "api" });
+      // A normal move (no "displace"), so the tiles it crosses fire their enter / leave / stop triggers.
+      // A trigger with "Stop movement" cancels it and re-issues it shorter: then wait for that move to land.
+      const landed = nextMoveOf(token);
+      const moved = await token.move(path.map(p => ({ x: p.x, y: p.y })), { method: "api" });
+      if (moved !== false) { landed.cancel(); planned.set(token.id, [path.at(-1)]); continue; }
+      // Where it ended, or (no move came) anywhere on the path, so no later token is pushed onto it
+      planned.set(token.id, (await landed) ? [{ x: token.x, y: token.y }] : [{ x: token.x, y: token.y }, ...path]);
     }
   }
 });

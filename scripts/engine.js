@@ -296,6 +296,8 @@ export function initiativeCount(trigger) {
  * with a lower initiative (or none rolled yet); turns.length when every combatant is on or above it.
  */
 export function initiativeSlot(turns, count) {
+  // Nobody has rolled yet (a combat begun before rolling): there is no count to pass
+  if (!turns.some(c => Number.isFinite(c?.initiative))) return null;
   const i = turns.findIndex(c => !(Number.isFinite(c?.initiative) && c.initiative >= count));
   return i === -1 ? turns.length : i;
 }
@@ -309,7 +311,7 @@ export function initiativeSlot(turns, count) {
  * @param {{round:number, turn:number}} prior
  * @param {{round:number, turn:number}} current
  * @param {number} n                 how many turns a round has
- * @param {(count:number) => number} slotOf  the slot of an initiative count
+ * @param {(count:number) => number|null} slotOf  the slot of an initiative count (null: skip it)
  * @param {{event:string, count?:number}[]} wanted  the round events to look for
  * @returns {{index:number, round:number, at:number}[]}  index into `wanted`, the round it fires for, sort key
  */
@@ -321,8 +323,10 @@ export function roundEventsPassed(prior, current, n, slotOf, wanted) {
   const firstRound = Math.max(1, prior?.round > 0 ? prior.round : 1);
   const out = [];
   wanted.forEach((w, index) => {
+    const slot = w.event === "roundStart" ? 0 : slotOf(w.count);
+    if (slot === null) return;
     for (let r = current.round; r >= firstRound; r--) {
-      const at = w.event === "roundStart" ? r * (n + 1) - 0.5 : r * (n + 1) + slotOf(w.count);
+      const at = w.event === "roundStart" ? r * (n + 1) - 0.5 : r * (n + 1) + slot;
       if (at > from && at <= to) { out.push({ index, round: r, at }); break; }
       if (at <= from) break;
     }
@@ -334,6 +338,8 @@ export function roundEventsPassed(prior, current, n, slotOf, wanted) {
 function fireRoundEvents(combat, prior, current) {
   const scene = combat.scene;
   if (!scene || !combat.started) return;
+  // A combat (re)started from round 0 begins afresh
+  if (!(prior?.round > 0)) onDeleteCombat(combat);
   const wanted = [];
   for (const tile of triggerTiles(scene)) {
     for (const trigger of getTriggers(tile)) {
