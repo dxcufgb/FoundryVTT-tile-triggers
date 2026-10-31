@@ -43,8 +43,16 @@ const TRIGGER_FIELDS = [
   { key: "chance", type: "number", label: "DXTT.Trigger.Chance", min: 0, max: 100, step: 1 },
   { key: "combat", type: "select", label: "DXTT.Trigger.Combat",
     options: { any: "DXTT.Option.CombatAny", in: "DXTT.Option.CombatIn", out: "DXTT.Option.CombatOut" } },
-  { key: "clickRange", type: "number", label: "DXTT.Trigger.ClickRange", hint: "DXTT.Trigger.ClickRangeHint", min: 0, step: 1, showIf: t => t.event === "click" }
+  { key: "clickRange", type: "number", label: "DXTT.Trigger.ClickRange", hint: "DXTT.Trigger.ClickRangeHint", min: 0, step: 1, showIf: t => t.event === "click" },
+  { key: "initiative", type: "number", label: "DXTT.Trigger.Initiative", hint: "DXTT.Trigger.InitiativeHint", step: 1, showIf: t => t.event === "initiative" },
+  { key: "requireToken", type: "checkbox", label: "DXTT.Trigger.RequireToken", hint: "DXTT.Trigger.RequireTokenHint", showIf: t => EVENTS[t.event]?.round }
 ];
+
+/** Does a path point at a trigger's own action list ("triggers.<i>.actions")? Returns the trigger. */
+function topLevelTrigger(data, path) {
+  const m = /^triggers\.(\d+)\.actions$/.exec(path);
+  return m ? data.triggers[Number(m[1])] ?? null : null;
+}
 
 export class TileTriggersEditor extends HandlebarsApplicationMixin(ApplicationV2) {
 
@@ -239,7 +247,8 @@ export class TileTriggersEditor extends HandlebarsApplicationMixin(ApplicationV2
     const collapsed = this.collapsed.has(t.id);
     const fired = st?.count ? game.i18n.format("DXTT.App.Fired", { n: st.count }) : "";
     const events = Object.fromEntries(Object.keys(EVENTS).map(k => [k, `DXTT.Event.${k}`]));
-    const fields = TRIGGER_FIELDS.filter(f => !f.showIf || f.showIf(t)).map(f => renderField(f, t[f.key], `${path}.${f.key}`)).join("");
+    const context = this.#fieldContext();
+    const fields = TRIGGER_FIELDS.filter(f => !f.showIf || f.showIf(t)).map(f => renderField(f, t[f.key], `${path}.${f.key}`, context)).join("");
     const btn = (op, icon, tip, extra = "") => `<button type="button" data-action="trigger" data-op="${op}" data-index="${i}" data-tooltip="${tip}" ${extra}><i class="${icon}"></i></button>`;
     return `
     <section class="dxtt-trigger ${t.enabled ? "" : "off"} ${collapsed ? "collapsed" : ""}">
@@ -286,9 +295,10 @@ export class TileTriggersEditor extends HandlebarsApplicationMixin(ApplicationV2
       return `<div class="dxtt-action unknown"><header><i class="fa-solid fa-question"></i> ${esc(a.type)}
         <button type="button" data-action="action" data-op="delete" data-path="${path}"><i class="fa-solid fa-trash"></i></button></header></div>`;
     }
+    const context = this.#fieldContext();
     let summary = "";
-    try { summary = def.summary?.(a) ?? ""; } catch { /* ignore */ }
-    const fields = def.fields.filter(f => !f.showIf || f.showIf(a)).map(f => renderField(f, a[f.key], `${path}.${f.key}`)).join("");
+    try { summary = def.summary?.(a, context) ?? ""; } catch { /* ignore */ }
+    const fields = def.fields.filter(f => !f.showIf || f.showIf(a)).map(f => renderField(f, a[f.key], `${path}.${f.key}`, context)).join("");
     const btn = (op, icon, tip, extra = "") => `<button type="button" data-action="action" data-op="${op}" data-path="${path}" data-tooltip="${tip}" ${extra}><i class="${icon}"></i></button>`;
     let branches = "";
     if (def.branches) {
@@ -325,6 +335,12 @@ export class TileTriggersEditor extends HandlebarsApplicationMixin(ApplicationV2
   /* -------------------------------------------- */
   /*  Editing                                     */
   /* -------------------------------------------- */
+
+  /** What options() and summary() of a field get: the tile being edited and its scene. */
+  #fieldContext() {
+    const tile = this.tile;
+    return { tile, scene: tile?.parent ?? null };
+  }
 
   #markDirty() {
     this.dirty = true;
@@ -472,7 +488,11 @@ export class TileTriggersEditor extends HandlebarsApplicationMixin(ApplicationV2
     if (!type || !ACTIONS[type]) return;
     const list = getProperty(this.data, path);
     if (!Array.isArray(list)) return;
-    list.push(newAction(type));
+    const action = newAction(type);
+    // Round events have no triggering token: a token action starts on "All tokens on this tile" instead
+    const trigger = topLevelTrigger(this.data, path);
+    if (trigger && EVENTS[trigger.event]?.round && action.target === "trigger") action.target = "inside";
+    list.push(action);
     this.#markDirty();
     this.render();
   }
@@ -644,14 +664,18 @@ function docLabel(uuid) {
 }
 
 /** One field of a trigger or action as HTML. */
-function renderField(f, value, path) {
+function renderField(f, value, path, context = {}) {
   const label = `<label>${esc(L(f.label))}${f.hint ? ` <i class="fa-solid fa-circle-question" data-tooltip="${esc(L(f.hint))}"></i>` : ""}</label>`;
   const ph = f.placeholder ? `placeholder="${esc(L(f.placeholder))}"` : "";
   switch (f.type) {
     case "checkbox":
       return `<div class="dxtt-field check"><label class="dxtt-check"><input type="checkbox" data-path="${path}" ${value ? "checked" : ""}> ${esc(L(f.label))}${f.hint ? ` <i class="fa-solid fa-circle-question" data-tooltip="${esc(L(f.hint))}"></i>` : ""}</label></div>`;
     case "select": {
-      const options = typeof f.options === "function" ? f.options() : f.options;
+      let options = (typeof f.options === "function" ? f.options(context) : f.options) ?? {};
+      // Keep a saved value that is no longer offered (a deleted area, another system's key) visible and selected
+      if (value !== undefined && value !== null && value !== "" && !Object.hasOwn(options, String(value))) {
+        options = { ...options, [value]: `${L("DXTT.App.Missing")} (${value})` };
+      }
       return `<div class="dxtt-field">${label}<select data-path="${path}">${opts(options, value)}</select></div>`;
     }
     case "number":

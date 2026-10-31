@@ -15,10 +15,11 @@
  * trigger's conditions unless a GM forced the fire (see handleFire).
  */
 
-import { MODULE_ID, SOCKET, EVENTS, defaultTrigger } from "./constants.js";
+import { MODULE_ID, SOCKET, EVENTS, DEFAULT_INITIATIVE, defaultTrigger } from "./constants.js";
 import { tokenInside, tokenInRange, samplePath } from "./geometry.js";
 import { runActions } from "./actions.js";
 import { isDisarmed } from "./disarm.js";
+import { onShakeMessage } from "./shake.js";
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -94,6 +95,20 @@ function combatOk(trigger, token, scene) {
   return true;
 }
 
+/** Is this a "once per round" event (round start, initiative count), which has no triggering token? */
+export const isRoundEvent = event => EVENTS[event]?.round === true;
+
+/** The tokens on the tile that count for a trigger: "Applies to", "Ignore hidden tokens" and Detection. */
+export function countedTokens(tile, trigger) {
+  return (tile.parent?.tokens ?? []).filter(t => tokenMatches(trigger, t) && tokenInside(tile, t, t, trigger.detection));
+}
+
+/** Round events: "Only when a token is on the tile" (on unless switched off). */
+function tokenOnTileOk(tile, trigger) {
+  if (!isRoundEvent(trigger.event) || trigger.requireToken === false) return true;
+  return countedTokens(tile, trigger).length > 0;
+}
+
 const inflight = new Set();
 const flightKey = (tile, trigger, token, perToken) => `${tile.uuid}|${trigger.id}${perToken ? `|${token?.id}` : ""}`;
 
@@ -101,6 +116,11 @@ function frequencyOk(tile, trigger, token) {
   const st = getState(tile)[trigger.id];
   if (trigger.frequency === "once") return !(st?.count > 0) && !inflight.has(flightKey(tile, trigger));
   if (trigger.frequency === "oncePerToken") {
+    // Round events have no token: they fire while a token they haven't fired for is on the tile
+    if (!token && isRoundEvent(trigger.event)) {
+      if (inflight.has(flightKey(tile, trigger, null, true))) return false;
+      return countedTokens(tile, trigger).some(t => !st?.tokens?.[t.id]);
+    }
     if (!token) return true;
     return !st?.tokens?.[token.id] && !inflight.has(flightKey(tile, trigger, token, true));
   }
@@ -115,6 +135,7 @@ export function shouldFire(tile, trigger, token, { roll = true } = {}) {
   if (!isEnabled() || !trigger.enabled || !tileActive(tile)) return false;
   if (!tokenMatches(trigger, token)) return false;
   if (!combatOk(trigger, token, tile.parent)) return false;
+  if (!tokenOnTileOk(tile, trigger)) return false;
   if (!frequencyOk(tile, trigger, token)) return false;
   if (roll && Number(trigger.chance) < 100 && Math.random() * 100 >= Number(trigger.chance)) return false;
   return true;
@@ -257,12 +278,100 @@ export function fireForToken(token, event) {
   }
 }
 
+/**
+ * Round events already looked at, so each fires (and rolls its chance) at most once per combat round, also
+ * when the GM steps back and forward again: "tileUuid|triggerId|combatId" -> the last round handled.
+ */
+const roundsSeen = new Map();
+
+/** The initiative count of an "Initiative count" trigger, as a number. */
+export function initiativeCount(trigger) {
+  const n = Number(trigger.initiative);
+  return Number.isFinite(n) ? n : DEFAULT_INITIATIVE;
+}
+
+/**
+ * Where in the turn order an initiative count falls: the index of the first turn that comes after it.
+ * On a tie the count goes after the combatants on it (the lair action rule), so that is the first combatant
+ * with a lower initiative (or none rolled yet); turns.length when every combatant is on or above it.
+ */
+export function initiativeSlot(turns, count) {
+  // Nobody has rolled yet (a combat begun before rolling): there is no count to pass
+  if (!turns.some(c => Number.isFinite(c?.initiative))) return null;
+  const i = turns.findIndex(c => !(Number.isFinite(c?.initiative) && c.initiative >= count));
+  return i === -1 ? turns.length : i;
+}
+
+/**
+ * The round events a turn change passes, in the order they happen. A combat's progress is laid out on one
+ * line: turn t of round r is at r * (n + 1) + t (n = number of turns), the start of round r just before turn 0,
+ * and an initiative count with slot k at r * (n + 1) + k (just before turn k; k = n is after the last turn,
+ * before the next round starts). Events between the prior state (excluded) and the current one (included)
+ * fire, at most once per trigger: only the latest round counts when the GM skips several.
+ * @param {{round:number, turn:number}} prior
+ * @param {{round:number, turn:number}} current
+ * @param {number} n                 how many turns a round has
+ * @param {(count:number) => number|null} slotOf  the slot of an initiative count (null: skip it)
+ * @param {{event:string, count?:number}[]} wanted  the round events to look for
+ * @returns {{index:number, round:number, at:number}[]}  index into `wanted`, the round it fires for, sort key
+ */
+export function roundEventsPassed(prior, current, n, slotOf, wanted) {
+  if (!(n > 0)) return [];
+  const pos = s => (s?.round > 0 ? s.round * (n + 1) + Math.clamp(Number(s.turn) || 0, 0, n - 1) : -1);
+  const from = pos(prior), to = pos(current);
+  if (!(to > from)) return [];
+  const firstRound = Math.max(1, prior?.round > 0 ? prior.round : 1);
+  const out = [];
+  wanted.forEach((w, index) => {
+    const slot = w.event === "roundStart" ? 0 : slotOf(w.count);
+    if (slot === null) return;
+    for (let r = current.round; r >= firstRound; r--) {
+      const at = w.event === "roundStart" ? r * (n + 1) - 0.5 : r * (n + 1) + slot;
+      if (at > from && at <= to) { out.push({ index, round: r, at }); break; }
+      if (at <= from) break;
+    }
+  });
+  return out.sort((a, b) => a.at - b.at);
+}
+
+/** Round start and initiative count triggers on the combat's scene (active GM, whatever scene it views). */
+function fireRoundEvents(combat, prior, current) {
+  const scene = combat.scene;
+  if (!scene || !combat.started) return;
+  // A combat (re)started from round 0 begins afresh
+  if (!(prior?.round > 0)) onDeleteCombat(combat);
+  const wanted = [];
+  for (const tile of triggerTiles(scene)) {
+    for (const trigger of getTriggers(tile)) {
+      if (!trigger.enabled || !isRoundEvent(trigger.event)) continue;
+      wanted.push({ tile, trigger, event: trigger.event, count: initiativeCount(trigger) });
+    }
+  }
+  if (!wanted.length) return;
+  const turns = combat.turns ?? [];
+  const passed = roundEventsPassed(prior, current, turns.length, count => initiativeSlot(turns, count), wanted);
+  for (const p of passed) {
+    const { tile, trigger, event } = wanted[p.index];
+    const key = `${tile.uuid}|${trigger.id}|${combat.id}`;
+    if ((roundsSeen.get(key) ?? 0) >= p.round) continue;
+    roundsSeen.set(key, p.round);
+    if (!shouldFire(tile, trigger, null)) continue;
+    dispatch({ sceneId: scene.id, tileId: tile.id, triggerId: trigger.id, event, tokenId: null });
+  }
+}
+
 function onCombatTurnChange(combat, prior, current) {
   if (!game.user.isActiveGM || !isEnabled()) return;
   const prev = prior?.combatantId ? combat.combatants.get(prior.combatantId) : null;
   const cur = current?.combatantId ? combat.combatants.get(current.combatantId) : null;
   if (prev?.token && prior.combatantId !== current?.combatantId) fireForToken(prev.token, "turnEnd");
+  try { fireRoundEvents(combat, prior, current); }
+  catch (err) { console.error(`${MODULE_ID} | round events failed`, err); }
   if (cur?.token) fireForToken(cur.token, "turnStart");
+}
+
+function onDeleteCombat(combat) {
+  for (const key of roundsSeen.keys()) if (key.endsWith(`|${combat.id}`)) roundsSeen.delete(key);
 }
 
 /* -------------------------------------------- */
@@ -326,7 +435,7 @@ function runaway(tokenId) {
  * - `force` counts only from a GM. A GM-forced manual fire skips the conditions (disarmed and switched-off
  *   tiles too), as the ▶ button and api.fire always did.
  * - The event must be the trigger's own one; only a GM may fire any trigger as "manual".
- * - Players: combat turn events never come from them (the active GM finds those itself). Movement and click
+ * - Players: combat turn and round events never come from them (the active GM finds those itself). Movement and click
  *   events need a token, and any token must be one the player owns; a click must be within the trigger's
  *   click range.
  * - Unless forced, the trigger's conditions are checked again (enabled, tile active, "Applies to", combat,
@@ -338,7 +447,7 @@ function fireAllowed(sender, tile, trigger, event, token, force) {
   if (typeof event !== "string" || !Object.hasOwn(EVENTS, event)) return false;
   if (event !== trigger.event && !(gm && event === "manual")) return false;
   if (!gm) {
-    if (event === "turnStart" || event === "turnEnd") return false;
+    if (event === "turnStart" || event === "turnEnd" || isRoundEvent(event)) return false;
     if ((EVENTS[event].movement || event === "click") && !token) return false;
     if (token && !token.testUserPermission(sender, "OWNER")) return false;
     if (event === "click" && !tokenInRange(token, tile, trigger.clickRange)) return false;
@@ -387,6 +496,10 @@ async function recordFired(tile, trigger, token) {
   const path = `flags.${MODULE_ID}.state.${trigger.id}`;
   const update = { [`${path}.count`]: (st.count ?? 0) + 1 };
   if (token) update[`${path}.tokens.${token.id}`] = true;
+  // Round events have no token: "once per token" remembers the tokens that were on the tile
+  else if (isRoundEvent(trigger.event) && trigger.frequency === "oncePerToken") {
+    for (const t of countedTokens(tile, trigger)) update[`${path}.tokens.${t.id}`] = true;
+  }
   await tile.update(update, { render: false, [MODULE_ID]: { state: true } });
 }
 
@@ -470,6 +583,12 @@ function onSocket(msg, ...extra) {
       if (canvas.scene?.id === msg.sceneId) canvas.animatePan({ x, y, scale: scale || undefined, duration: 800 });
       break;
     }
+    case "shake": {
+      // Only a GM's client sends this (the "Screen shake" action)
+      if (!socketSender(extra)?.isGM) return;
+      onShakeMessage(msg);
+      break;
+    }
   }
 }
 
@@ -477,5 +596,6 @@ export function registerEngine() {
   Hooks.on("preMoveToken", onPreMoveToken);
   Hooks.on("moveToken", onMoveToken);
   Hooks.on("combatTurnChange", onCombatTurnChange);
+  Hooks.on("deleteCombat", onDeleteCombat);
   game.socket.on(SOCKET, onSocket);
 }
