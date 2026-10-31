@@ -29,7 +29,7 @@ Requirements and the recommended module: see [Installation](https://github.com/d
 The full guide is in the [wiki](https://github.com/dxcufgb/FoundryVTT-tile-triggers/wiki):
 
 - [Opening the Editor](https://github.com/dxcufgb/FoundryVTT-tile-triggers/wiki/Opening-the-Editor): the Tile Triggers window and the GM outlines
-- [Triggers](https://github.com/dxcufgb/FoundryVTT-tile-triggers/wiki/Triggers): events (movement, combat turns and rounds, initiative counts, clicks) and trigger options
+- [Triggers](https://github.com/dxcufgb/FoundryVTT-tile-triggers/wiki/Triggers): events (movement, combat turns and rounds, initiative counts, clicks) and trigger options; round events work in linked and unlinked encounters
 - [Actions](https://github.com/dxcufgb/FoundryVTT-tile-triggers/wiki/Actions): saves, damage, pushes, doors, teleports, screen shake, chat, sounds and more
 - [Disarming a Tile](https://github.com/dxcufgb/FoundryVTT-tile-triggers/wiki/Disarming-a-Tile): found and disarmed traps
 - [Examples](https://github.com/dxcufgb/FoundryVTT-tile-triggers/wiki/Examples): pressure plate, ambush, lever, lair action, collapsing ceiling

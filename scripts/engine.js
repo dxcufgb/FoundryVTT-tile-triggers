@@ -83,12 +83,34 @@ export function tokenMatches(trigger, token) {
   }
 }
 
-function inCombat(token, scene) {
-  if (!token) return !!game.combats.find(c => c.started && c.scene?.id === scene?.id);
+/**
+ * The scenes a combat is on: its scene when it is linked to one, otherwise the scenes of its combatants'
+ * tokens (Foundry v12+ creates encounters unlinked, with combat.scene null). Combatants without a token count
+ * for no scene.
+ */
+export function combatScenes(combat) {
+  if (combat?.scene) return [combat.scene];
+  const scenes = new Map();
+  for (const cb of combat?.combatants ?? []) {
+    const scene = cb.token?.parent;
+    if (scene) scenes.set(scene.id, scene);
+  }
+  return [...scenes.values()];
+}
+
+/** Is a combat on this scene: linked to it, or with a combatant whose token is on it? */
+export function combatOnScene(combat, scene) {
+  if (!scene) return false;
+  if (combat?.scene?.id === scene.id) return true;
+  return (combat?.combatants ?? []).some(cb => cb.token?.parent?.id === scene.id);
+}
+
+export function inCombat(token, scene) {
+  if (!token) return !!game.combats.find(c => c.started && combatOnScene(c, scene));
   return !!game.combats.find(c => c.started && c.combatants.some(cb => cb.tokenId === token.id && cb.sceneId === token.parent?.id));
 }
 
-/** `scene` is the tile's scene: without a token, "in combat" means a combat has started there. */
+/** `scene` is the tile's scene: without a token, "in combat" means a started combat is on it (see combatOnScene). */
 function combatOk(trigger, token, scene) {
   if (trigger.combat === "in") return inCombat(token, scene);
   if (trigger.combat === "out") return !inCombat(token, scene);
@@ -334,24 +356,30 @@ export function roundEventsPassed(prior, current, n, slotOf, wanted) {
   return out.sort((a, b) => a.at - b.at);
 }
 
-/** Round start and initiative count triggers on the combat's scene (active GM, whatever scene it views). */
-function fireRoundEvents(combat, prior, current) {
-  const scene = combat.scene;
-  if (!scene || !combat.started) return;
+/**
+ * Round start and initiative count triggers on the combat's scenes (active GM, whatever scene it views): the
+ * linked scene, or for an unlinked combat every scene one of its combatants' tokens is on.
+ */
+export function fireRoundEvents(combat, prior, current) {
+  if (!combat?.started) return;
+  const scenes = combatScenes(combat);
+  if (!scenes.length) return;
   // A combat (re)started from round 0 begins afresh
   if (!(prior?.round > 0)) onDeleteCombat(combat);
   const wanted = [];
-  for (const tile of triggerTiles(scene)) {
-    for (const trigger of getTriggers(tile)) {
-      if (!trigger.enabled || !isRoundEvent(trigger.event)) continue;
-      wanted.push({ tile, trigger, event: trigger.event, count: initiativeCount(trigger) });
+  for (const scene of scenes) {
+    for (const tile of triggerTiles(scene)) {
+      for (const trigger of getTriggers(tile)) {
+        if (!trigger.enabled || !isRoundEvent(trigger.event)) continue;
+        wanted.push({ scene, tile, trigger, event: trigger.event, count: initiativeCount(trigger) });
+      }
     }
   }
   if (!wanted.length) return;
   const turns = combat.turns ?? [];
   const passed = roundEventsPassed(prior, current, turns.length, count => initiativeSlot(turns, count), wanted);
   for (const p of passed) {
-    const { tile, trigger, event } = wanted[p.index];
+    const { scene, tile, trigger, event } = wanted[p.index];
     const key = `${tile.uuid}|${trigger.id}|${combat.id}`;
     if ((roundsSeen.get(key) ?? 0) >= p.round) continue;
     roundsSeen.set(key, p.round);

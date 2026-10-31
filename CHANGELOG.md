@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1
+
+- Fix: **Combat round starts** and **Initiative count** now fire in encounters that aren't linked to a scene (Foundry's default): the scene is taken from the combatants' tokens. A combat linked to a scene works as before. An unlinked combat with combatants on two scenes fires each scene's round triggers once per round. **Combat: only in combat** on these triggers counts such a combat too. Movement and turn triggers are unchanged.
+- Unit tests for the round events, run by CI.
+
 ## 1.2.0
 
 - New event **Combat round starts**: fires once at the start of every combat round (round 1 included) for a combat on the tile's scene. The GM's client finds it whichever scene the GM is viewing.
