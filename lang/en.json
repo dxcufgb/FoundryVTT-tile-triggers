@@ -23,11 +23,15 @@
       "Indicators": {
         "Name": "Show trigger outlines",
         "Hint": "Draw an outline around tiles that have triggers (only GMs ever see them)."
+      },
+      "AllowShake": {
+        "Name": "Allow screen shake",
+        "Hint": "Let tile triggers shake your view of the map (the “Screen shake” action). Switch it off if the motion bothers you. Only affects this computer."
       }
     },
     "Tab": {
       "Label": "Triggers",
-      "Hint": "Triggers run actions when tokens enter, leave or stop on this tile, when a combat turn starts or ends here, or when a player clicks it.",
+      "Hint": "Triggers run actions when tokens enter, leave or stop on this tile, when a combat turn starts or ends here, when a combat round starts or passes an initiative count, or when a player clicks it.",
       "Open": "Open trigger editor",
       "SaveFirst": "Create the tile first, then come back here to add triggers.",
       "ActionCount": "{n} action(s)"
@@ -94,6 +98,8 @@
       "stop": "Token ends its move on tile",
       "turnStart": "Combat turn starts on tile",
       "turnEnd": "Combat turn ends on tile",
+      "roundStart": "Combat round starts",
+      "initiative": "Initiative count",
       "click": "Player clicks tile",
       "manual": "Manual / macro only"
     },
@@ -103,6 +109,8 @@
       "stop": "Fires when a token comes to rest on the tile (at the end of a move).",
       "turnStart": "Fires when a combatant's turn starts while its token stands on the tile.",
       "turnEnd": "Fires when a combatant's turn ends while its token stands on the tile.",
+      "roundStart": "Fires once at the start of every combat round (round 1 too) of a combat on this scene, before the first turn. No token sets it off: actions on “The triggering token” get none, so use “All tokens on this tile”. The GM doesn't need to be viewing this scene.",
+      "initiative": "Fires once per combat round when combat passes the initiative count below, after any combatants on that count (like lair actions on 20). It also fires when nobody has exactly that count. No token sets it off: use “All tokens on this tile” for actions on tokens.",
       "click": "Fires when someone clicks the tile on the Tokens layer with one of their tokens close enough (see Click range). Good for levers, chests and doors.",
       "manual": "Only fires from the ▶ button here, or from a macro: game.modules.get(\"dxcufgbs-tile-triggers\").api.fire(tile, \"name\")."
     },
@@ -117,7 +125,11 @@
       "Chance": "Chance %",
       "Combat": "Combat",
       "ClickRange": "Click range (spaces)",
-      "ClickRangeHint": "How close the clicking player's token must be. 0 = standing on the tile, 1 = next to it."
+      "ClickRangeHint": "How close the clicking player's token must be. 0 = standing on the tile, 1 = next to it.",
+      "Initiative": "Initiative count",
+      "InitiativeHint": "Fires after the last combatant with this initiative or higher, before the first one below it. On a tie it goes after the combatants on this count.",
+      "RequireToken": "Only when a token is on the tile",
+      "RequireTokenHint": "Only fire while at least one token that counts (see Applies to, Ignore hidden tokens and Detection) stands on the tile."
     },
     "Option": {
       "AppliesPlayers": "Player characters only",
@@ -172,7 +184,20 @@
       "Disable": "Disable",
       "ResetFired": "Reset fired",
       "Disarm": "Disarm",
-      "Arm": "Arm"
+      "Arm": "Arm",
+      "TargetPatch": "Tokens in the random patch",
+      "RandomPatch": "Random patch in this tile",
+      "PushAwayTile": "Away from this tile's centre",
+      "PushTowardTile": "Toward this tile's centre",
+      "PushTowardDoc": "Toward a picked token, tile or note",
+      "PushAwayDoc": "Away from a picked token, tile or note",
+      "PushAwayToken": "Away from the triggering token",
+      "PushCompass": "Fixed direction",
+      "ShakeLow": "Low",
+      "ShakeMedium": "Medium",
+      "ShakeHigh": "High",
+      "ShakeCustom": "Custom (pixels)",
+      "PickArea": "— pick an area —"
     },
     "Field": {
       "RollKind": "Roll",
@@ -221,7 +246,21 @@
       "Seconds": "Seconds",
       "TriggerName": "Trigger name (empty = this trigger)",
       "ResetFiredOnArm": "Reset fired triggers when arming",
-      "ResetFiredOnArmHint": "When the tile is armed, forget what its triggers have fired for, so one-shot (“Once”) traps can fire again."
+      "ResetFiredOnArmHint": "When the tile is armed, forget what its triggers have fired for, so one-shot (“Once”) traps can fire again.",
+      "TargetHint": "“The triggering token” is empty for round start and initiative count triggers. “Tokens in the random patch” are the tokens in the patch an earlier “Play animation” action in this list picked.",
+      "PatchWidth": "Patch width (spaces)",
+      "PatchHeight": "Patch height (spaces)",
+      "PatchHint": "Picks a random grid-aligned patch of this size that lies wholly inside the tile, and plays the animation there. Later actions in this list can target “Tokens in the random patch”. Works without an effect file too, to only pick the patch.",
+      "PushDistance": "Distance (spaces)",
+      "PushDirection": "Direction",
+      "PushDirectionHint": "Tokens move along the grid, one space at a time, and stop on the last free space before a wall or another token. They set off other tiles' triggers as normal movement does.",
+      "PushDoc": "Token, tile or note",
+      "Compass": "Compass direction",
+      "ShakeStrength": "Strength",
+      "ShakeAmount": "Strength (pixels)",
+      "ShakeAmountHint": "How far the view moves, in screen pixels (low is 6, medium 14, high 28).",
+      "Area": "Area",
+      "AreaHint": "An area of Dxcufgb's Canvas Effects on this tile's scene."
     },
     "Placeholder": {
       "PromptText": "The flagstone clicks under your foot!",
@@ -240,11 +279,13 @@
       "check": "Saving throw / check",
       "damage": "Damage / healing",
       "status": "Condition",
+      "push": "Push token",
       "reveal": "Show / hide things",
       "door": "Open / close / lock doors",
       "teleport": "Teleport",
       "tileImage": "Change tile image",
       "pan": "Pan camera",
+      "shake": "Screen shake",
       "effect": "Play animation (Sequencer)",
       "pause": "Pause / unpause game",
       "chat": "Chat message / whisper",
@@ -255,7 +296,8 @@
       "wait": "Wait",
       "toggleTrigger": "Enable / disable a trigger",
       "stopActions": "Stop (skip remaining actions)",
-      "armTile": "Disarm / arm tile"
+      "armTile": "Disarm / arm tile",
+      "canvasEffectArea": "Show / hide canvas effect area"
     },
     "Roll": {
       "Title": "Roll requested",
@@ -302,6 +344,16 @@
     },
     "Outline": {
       "Disarmed": "disarmed"
+    },
+    "Compass": {
+      "n": "North (up)",
+      "ne": "North-east",
+      "e": "East (right)",
+      "se": "South-east",
+      "s": "South (down)",
+      "sw": "South-west",
+      "w": "West (left)",
+      "nw": "North-west"
     }
   }
 }

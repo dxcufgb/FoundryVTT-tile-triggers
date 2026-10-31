@@ -2,9 +2,10 @@
  * Dxcufgb's Tile Triggers (dxcufgbs-tile-triggers) - Foundry VTT V13
  *
  * Bind triggers to tiles. A trigger listens for an event (a token enters, leaves or stops on the
- * tile, a combat turn starts or ends on it, a player clicks it, or the GM fires it) and runs a list
- * of actions (reveal things, ask for a saving throw with success / failure branches, damage, pause
- * the game, whisper the GM, teleport, open doors, play a sound, run a macro, ...).
+ * tile, a combat turn starts or ends on it, a combat round starts, combat passes an initiative count,
+ * a player clicks it, or the GM fires it) and runs a list of actions (reveal things, ask for a saving
+ * throw with success / failure branches, damage, push tokens, shake the screen, pause the game,
+ * whisper the GM, teleport, open doors, play a sound, run a macro, ...).
  *
  * API: game.modules.get("dxcufgbs-tile-triggers").api
  *   .open(tile?)                         open the Tile Triggers window (on a tile)
@@ -17,6 +18,7 @@
  *   .registerAction(type, def)           add an action type (see scripts/actions.js)
  *   .runActions(list, ctx)               run an action list (a custom action's success / fail branches)
  *   .actions / .events                   read-only: frozen copies of the action types and trigger events
+ *                                        (events: {icon, movement, round}; round = once per combat round)
  *
  * A disarmed tile fires nothing automatically (like an inactive one) but GM-forced manual fires still
  * run. Hooks: "dxcufgbs-tile-triggers.fire" (ctx) when a trigger runs, and
@@ -25,10 +27,14 @@
 
 import { MODULE_ID, QUERY_ROLL, EVENTS } from "./constants.js";
 import { registerEngine, getTriggers, fire, resetState } from "./engine.js";
-import { ACTIONS, registerAction, runActions, promptRoll, tileName } from "./actions.js";
+import { ACTIONS, registerAction, runActions, promptRoll, tileName, registerCanvasEffectsAction, CANVAS_EFFECTS_ID } from "./actions.js";
 import { TileTriggersEditor } from "./editor.js";
 import { registerCanvas, drawIndicators } from "./canvas.js";
 import { registerDisarm, isDisarmed, setDisarmed } from "./disarm.js";
+import { registerShake } from "./shake.js";
+
+/** Settings every user sees, also players (the others are GM-only, see the "setup" hook). */
+const PLAYER_SETTINGS = new Set(["allowShake"]);
 
 const L = key => game.i18n.localize(key);
 const esc = s => foundry.utils.escapeHTML(String(s ?? ""));
@@ -63,6 +69,10 @@ Hooks.once("init", () => {
     scope: "client", config: true, type: Boolean, default: true,
     onChange: () => { drawIndicators(); ui.controls?.render(); }
   });
+  game.settings.register(MODULE_ID, "allowShake", {
+    name: "DXTT.Settings.AllowShake.Name", hint: "DXTT.Settings.AllowShake.Hint",
+    scope: "client", config: true, type: Boolean, default: true
+  });
 
   // The roll prompt the active GM sends to the player who owns the token (the "Saving throw / check"
   // action). Only a GM sends it. Foundry's API documents no sender for query handlers: when the handler
@@ -84,6 +94,9 @@ Hooks.once("init", () => {
   registerEngine();
   registerCanvas();
   registerDisarm();
+  registerShake();
+  // The "Canvas effect area" action only exists while Dxcufgb's Canvas Effects is active
+  if (game.modules.get(CANVAS_EFFECTS_ID)?.active) registerCanvasEffectsAction();
 
   const mod = game.modules.get(MODULE_ID);
   if (mod) {
@@ -104,11 +117,11 @@ Hooks.once("init", () => {
   }
 });
 
-// Settings are GM-only: hide the whole Tile Triggers section from players in Configure Settings.
+// Settings are GM-only, except "Allow screen shake": players see only that one in Configure Settings.
 // (game.user doesn't exist yet during "init", so this runs at "setup", before any settings window opens.)
 Hooks.once("setup", () => {
   for (const setting of game.settings.settings.values()) {
-    if (setting.namespace === MODULE_ID && setting.config) setting.config = game.user.isGM;
+    if (setting.namespace === MODULE_ID && setting.config && !PLAYER_SETTINGS.has(setting.key)) setting.config = game.user.isGM;
   }
 });
 
