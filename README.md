@@ -40,4 +40,4 @@ The full guide is in the [wiki](https://github.com/dxcufgb/FoundryVTT-tile-trigg
 
 ## License
 
-MIT
+[MIT](LICENSE)
