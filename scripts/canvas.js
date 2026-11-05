@@ -4,9 +4,10 @@
 
 import { MODULE_ID } from "./constants.js";
 import { tileContains, tileShape, tokenInRange } from "./geometry.js";
-import { getTriggers, tileActive, shouldFire, dispatch, isEnabled } from "./engine.js";
+import { getTriggers, tileActive, fireBlocker, dispatch, isEnabled } from "./engine.js";
 import { tileName } from "./actions.js";
 import { isDisarmed } from "./disarm.js";
+import { crumb } from "./debug-recorder.js";
 
 /* -------------------------------------------- */
 /*  Click triggers                              */
@@ -51,12 +52,17 @@ function handleClick(point, controlled) {
       const token = pool.find(t => tokenInRange(t, tile, trigger.clickRange)) ?? null;
       if (!token && pool.length) { tooFar = true; continue; }
       if (!token && !game.user.isGM) continue;
-      if (!shouldFire(tile, trigger, token)) continue;
+      const reason = fireBlocker(tile, trigger, token);
+      crumb("trigger.evaluate", { event: "click", fires: !reason, reason: reason ?? "none" });
+      if (reason) continue;
       dispatch({ sceneId: scene.id, tileId: tile.id, triggerId: trigger.id, event: "click", tokenId: token?.id ?? null });
       return;
     }
   }
-  if (tooFar) ui.notifications.info(game.i18n.localize("DXTT.Notify.TooFar"));
+  if (tooFar) {
+    crumb("trigger.evaluate", { event: "click", fires: false, reason: "outOfRange" });
+    ui.notifications.info(game.i18n.localize("DXTT.Notify.TooFar"));
+  }
 }
 
 /* -------------------------------------------- */

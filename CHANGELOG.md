@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Optional integration with Dxcufgb's Debug Recorder (`dxcufgbs-debug-recorder`): while the GM records, Tile Triggers adds a snapshot of its runtime state (trigger and action counts on the viewed scene, detected integrations, engine queues, error counts) and breadcrumbs for trigger evaluation, firing, refusals, actions, saving throw results, socket relays and the editor. Only counts, booleans and the module's own ids are recorded, never names, texts, paths or URLs. Without the recorder nothing changes.
+
 ## 1.2.1
 
 - Fix: **Combat round starts** and **Initiative count** now fire in encounters that aren't linked to a scene (Foundry's default): the scene is taken from the combatants' tokens. A combat linked to a scene works as before. An unlinked combat with combatants on two scenes fires each scene's round triggers once per round. **Combat: only in combat** on these triggers counts such a combat too. Movement and turn triggers are unchanged.
