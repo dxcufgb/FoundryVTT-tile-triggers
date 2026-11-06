@@ -32,11 +32,11 @@ export function isEnabled() {
   return game.settings.get(MODULE_ID, "enabled");
 }
 
-/** A tile's triggers, with defaults filled in. */
+/** A tile's triggers, with defaults filled in. Entries that aren't objects (a broken flag) are left out. */
 export function getTriggers(tile) {
   const list = tile?.flags?.[MODULE_ID]?.triggers;
   if (!Array.isArray(list)) return [];
-  return list.map(t => ({ ...defaultTrigger(), ...foundry.utils.deepClone(t), id: t.id ?? foundry.utils.randomID() }));
+  return list.filter(t => t && typeof t === "object" && !Array.isArray(t)).map(t => ({ ...defaultTrigger(), ...foundry.utils.deepClone(t), id: t.id ?? foundry.utils.randomID() }));
 }
 
 export function getState(tile) {

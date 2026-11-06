@@ -76,6 +76,18 @@ test("a failing recorder or snapshot never throws into the module", t => {
   assert.equal(rec.registered.length, 1);
 });
 
+test("attaches at once when the recorder API already exists", async () => {
+  const fresh = await import("../scripts/debug-recorder.js?already-ready");
+  const api = fakeRecorder();
+  modules.set(RECORDER_ID, { api });
+  fresh.registerDebugRecorder(() => ({ ok: true }));
+  modules.delete(RECORDER_ID);
+  assert.equal(api.registered.length, 1);
+  assert.equal(api.registered[0].id, MODULE_ID);
+  fresh.crumb("app.render", { triggers: 1 });
+  assert.deepEqual(api.crumbs, [{ id: MODULE_ID, key: "app.render", data: { triggers: 1 } }]);
+});
+
 test("ownId keeps only the module's own ids", () => {
   assert.equal(ownId("enter", { enter: {}, exit: {} }), "enter");
   assert.equal(ownId("Bob's trap", { enter: {} }), "other");

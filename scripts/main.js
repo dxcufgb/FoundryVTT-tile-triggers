@@ -25,7 +25,7 @@
  * "dxcufgbs-tile-triggers.disarm" (tile, disarmed) whenever a tile is disarmed or re-armed.
  */
 
-import { MODULE_ID, QUERY_ROLL, EVENTS } from "./constants.js";
+import { MODULE_ID, QUERY_ROLL, EVENTS, MAX_DEPTH } from "./constants.js";
 import { registerEngine, getTriggers, getState, fire, resetState, tileActive, engineState } from "./engine.js";
 import { ACTIONS, registerAction, runActions, promptRoll, tileName, registerCanvasEffectsAction, CANVAS_EFFECTS_ID, actionTypeId, actionTypeCounts } from "./actions.js";
 import { TileTriggersEditor } from "./editor.js";
@@ -64,13 +64,15 @@ function sceneTriggerStats(scene) {
     triggers: 0, enabledTriggers: 0, firedTriggers: 0, actions: 0,
     byEvent: {}, byFrequency: {}, actionTypes: {}
   };
-  const countActions = list => {
+  // Nested success / fail lists are counted down to the depth runActions runs (MAX_DEPTH + 2), no deeper
+  const countActions = (list, depth = 0) => {
+    if (depth > MAX_DEPTH + 2) return;
     for (const a of Array.isArray(list) ? list : []) {
       if (!a || typeof a !== "object") continue;
       stats.actions++;
       bump(stats.actionTypes, actionTypeId(a.type));
-      if (Array.isArray(a.success)) countActions(a.success);
-      if (Array.isArray(a.fail)) countActions(a.fail);
+      if (Array.isArray(a.success)) countActions(a.success, depth + 1);
+      if (Array.isArray(a.fail)) countActions(a.fail, depth + 1);
     }
   };
   for (const tile of scene?.tiles ?? []) {
