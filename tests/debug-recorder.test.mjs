@@ -102,3 +102,35 @@ test("noteError counts fixed codes", () => {
   assert.equal(errorState().counts.runaway, 2);
   assert.equal(errorState().last, "runaway");
 });
+
+test("a failed register() (false or a throw) leaves the recorder unset, and the fallback retries", async t => {
+  t.mock.method(console, "warn", () => {});
+  const fresh = await import("../scripts/debug-recorder.js?register-fails");
+  const api = fakeRecorder();
+  let outcome = false;
+  api.register = (id, def) => {
+    api.registered.push({ id, def });
+    if (outcome instanceof Error) throw outcome;
+    return outcome;
+  };
+  modules.set(RECORDER_ID, { api });
+  fresh.registerDebugRecorder(() => ({ ok: true }));
+  fresh.crumb("app.render", { triggers: 1 });
+  assert.equal(api.registered.length, 1);
+  assert.equal(api.crumbs.length, 0, "register() returned false: the recorder is not kept");
+
+  outcome = new Error("recorder bug");
+  assert.doesNotThrow(() => callOnce(`${RECORDER_ID}.ready`, api));
+  fresh.crumb("app.render", { triggers: 1 });
+  assert.equal(api.registered.length, 2, "retried on the recorder's ready hook");
+  assert.equal(api.crumbs.length, 0, "register() threw: the recorder is not kept");
+
+  outcome = true;
+  callOnce("ready");
+  assert.equal(api.registered.length, 3, "retried on ready");
+  fresh.crumb("app.render", { triggers: 1 });
+  assert.deepEqual(api.crumbs, [{ id: MODULE_ID, key: "app.render", data: { triggers: 1 } }]);
+  fresh.registerDebugRecorder(() => ({ ok: true }));
+  assert.equal(api.registered.length, 3, "a successful registration is not repeated");
+  modules.delete(RECORDER_ID);
+});
