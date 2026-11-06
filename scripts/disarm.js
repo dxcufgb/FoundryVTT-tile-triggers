@@ -12,6 +12,7 @@
  */
 
 import { MODULE_ID } from "./constants.js";
+import { crumb } from "./debug-recorder.js";
 
 const resolve = tile => (typeof tile === "string" ? fromUuidSync(tile) : tile?.document ?? tile);
 
@@ -50,6 +51,7 @@ function disarmChanged(changes) {
 export function registerDisarm() {
   Hooks.on("updateTile", (tile, changes) => {
     if (!disarmChanged(changes)) return;
+    crumb("tile.disarm", { disarmed: isDisarmed(tile) });
     Hooks.callAll(`${MODULE_ID}.disarm`, tile, isDisarmed(tile));
     // Keep an open Tile HUD in step (its shield button shows the state)
     const hud = canvas.hud?.tile;

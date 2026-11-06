@@ -224,3 +224,11 @@ test("roundEventsPassed: round start and initiative counts, once per trigger", (
   // Going back fires nothing
   assert.deepEqual(roundEventsPassed({ round: 2, turn: 0 }, { round: 1, turn: 2 }, 3, slot, wanted), []);
 });
+
+test("getTriggers leaves out entries that aren't objects", async () => {
+  const { getTriggers } = await import("../scripts/engine.js");
+  const tile = { flags: { [MODULE_ID]: { triggers: [null, 5, "x", [], { id: "ok", event: "enter" }] } } };
+  const list = getTriggers(tile);
+  assert.equal(list.length, 1);
+  assert.equal(list[0].id, "ok");
+});

@@ -24,12 +24,28 @@ import { MODULE_ID, QUERY_ROLL, SOCKET, MAX_DEPTH } from "./constants.js";
 import { tileContains, tokenInside, centerAt } from "./geometry.js";
 import { isDisarmed, setDisarmed } from "./disarm.js";
 import { SHAKE_STRENGTHS, shakeAmplitude, shakeSeconds, shakeCanvas } from "./shake.js";
+import { crumb, noteError } from "./debug-recorder.js";
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const L = key => game.i18n.localize(key);
 const esc = s => foundry.utils.escapeHTML(String(s ?? ""));
 
 export const ACTIONS = {};
+
+/** The action types this module defines itself (filled in below); others come from registerAction calls. */
+const OWN_ACTIONS = new Set(["canvasEffectArea"]);
+
+/** An action type for the Debug Recorder: this module's own type id, "custom" for another module's, else "unknown". */
+export function actionTypeId(type) {
+  if (OWN_ACTIONS.has(type)) return type;
+  return typeof type === "string" && Object.hasOwn(ACTIONS, type) ? "custom" : "unknown";
+}
+
+/** How many action types there are: this module's own, and those other modules registered. */
+export function actionTypeCounts() {
+  const own = Object.keys(ACTIONS).filter(t => OWN_ACTIONS.has(t)).length;
+  return { own, custom: Object.keys(ACTIONS).length - own };
+}
 
 /* -------------------------------------------- */
 /*  Running                                     */
@@ -58,16 +74,23 @@ export async function runActions(list, ctx) {
     if (!raw || raw.disabled) continue;
     const def = ACTIONS[raw.type];
     if (!def) {
+      noteError("unknownAction");
+      crumb("action.skipped", { type: "unknown", reason: "unknownType", depth: ctx.depth });
       console.warn(`${MODULE_ID} | unknown action type "${raw.type}"`);
       continue;
     }
     const action = normalizeAction(raw);
+    const started = Date.now();
+    let ok = true;
     try {
       await def.run(action, ctx);
     } catch (err) {
+      ok = false;
+      noteError("actionFailed");
       console.error(`${MODULE_ID} | action "${raw.type}" failed`, err);
       ui.notifications.error(game.i18n.format("DXTT.Notify.ActionFailed", { action: L(def.label), error: err.message }));
     }
+    crumb("action.run", { type: actionTypeId(raw.type), depth: ctx.depth, ok, ms: Date.now() - started, stop: !!ctx.stop });
     if (ctx.stop) break;
   }
 }
@@ -327,9 +350,14 @@ async function requestRoll(token, spec, mode) {
       try {
         const res = await user.query(QUERY_ROLL, { actorUuid: actor.uuid, spec }, { timeout: (spec.timeout + 10) * 1000 });
         if (res && Number.isFinite(res.total)) return res;
+        crumb("check.fallback", { reason: "noAnswer" });
       } catch (err) {
+        noteError("rollQuery");
+        crumb("check.fallback", { reason: "queryFailed" });
         console.warn(`${MODULE_ID} | roll request to ${user.name} failed, rolling for them`, err);
       }
+    } else {
+      crumb("check.fallback", { reason: "noActiveOwner" });
     }
   }
   return rollFor(actor, spec, "normal");
@@ -419,6 +447,11 @@ registerAction("check", {
         ...ctx, token, actor: token.actor, depth: ctx.depth + 1,
         vars: { ...ctx.vars, total: res?.total ?? "", dc: spec.dc, result: L(success ? "DXTT.Success" : "DXTT.Failure") }
       };
+      crumb("check.result", {
+        kind: ["save", "ability", "skill", "formula"].includes(spec.kind) ? spec.kind : "other",
+        mode: action.mode === "auto" ? "auto" : "prompt", rolled: !!res, success, dealt,
+        branchActions: (success ? action.success : action.fail)?.length ?? 0
+      });
       await runActions(success ? action.success : action.fail, sub);
       // Later actions in the same list can use the (last) result too
       Object.assign(ctx.vars, { total: res?.total ?? "", dc: spec.dc, result: sub.vars.result });
@@ -845,6 +878,7 @@ registerAction("effect", {
       patch = randomPatch(ctx.tile, ctx.scene, action.patchWidth, action.patchHeight);
       ctx.patch = patch;
       if (!patch) {
+        crumb("action.skipped", { type: "effect", reason: "noPatchFits", depth: ctx.depth });
         console.warn(`${MODULE_ID} | no ${patchSquares(action.patchWidth)} × ${patchSquares(action.patchHeight)} patch fits inside the tile "${tileName(ctx.tile)}"`);
         return;
       }
@@ -852,6 +886,7 @@ registerAction("effect", {
     if (!action.file) return;
     const Seq = globalThis.Sequence;
     if (!Seq || !game.modules.get("sequencer")?.active) {
+      crumb("action.skipped", { type: "effect", reason: "noSequencer", depth: ctx.depth });
       ui.notifications.warn(L("DXTT.Notify.NoSequencer"));
       return;
     }
@@ -1076,12 +1111,14 @@ export function registerCanvasEffectsAction() {
     async run(action, ctx) {
       const api = canvasEffects();
       if (!api || typeof api.saveArea !== "function") {
+        crumb("action.skipped", { type: "canvasEffectArea", reason: "moduleInactive", depth: ctx.depth });
         console.warn(`${MODULE_ID} | "Canvas effect area" skipped: ${CANVAS_EFFECTS_ID} is not active`);
         return;
       }
       const id = typeof action.area === "string" ? action.area : "";
       const area = id ? effectAreas(ctx.scene).find(a => a.id === id) : null;
       if (!area) {
+        crumb("action.skipped", { type: "canvasEffectArea", reason: "areaMissing", depth: ctx.depth });
         console.warn(`${MODULE_ID} | "Canvas effect area" skipped: no area "${id}" on the scene "${ctx.scene?.name}"`);
         return;
       }
@@ -1091,11 +1128,15 @@ export function registerCanvasEffectsAction() {
       try {
         await api.saveArea({ ...area, visible }, ctx.scene);
       } catch (err) {
+        noteError("canvasEffectSave");
         console.warn(`${MODULE_ID} | "Canvas effect area" could not save the area "${area.name}"`, err);
       }
     }
   });
 }
+
+// Everything registered above this line is one of this module's own action types
+for (const type of Object.keys(ACTIONS)) OWN_ACTIONS.add(type);
 
 export const GROUPS = {
   rolls: "DXTT.Group.Rolls",

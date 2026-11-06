@@ -17,9 +17,10 @@
 
 import { MODULE_ID, SOCKET, EVENTS, DEFAULT_INITIATIVE, defaultTrigger } from "./constants.js";
 import { tokenInside, tokenInRange, samplePath } from "./geometry.js";
-import { runActions } from "./actions.js";
+import { runActions, actionTypeId } from "./actions.js";
 import { isDisarmed } from "./disarm.js";
 import { onShakeMessage } from "./shake.js";
+import { crumb, noteError, ownId } from "./debug-recorder.js";
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -31,11 +32,11 @@ export function isEnabled() {
   return game.settings.get(MODULE_ID, "enabled");
 }
 
-/** A tile's triggers, with defaults filled in. */
+/** A tile's triggers, with defaults filled in. Entries that aren't objects (a broken flag) are left out. */
 export function getTriggers(tile) {
   const list = tile?.flags?.[MODULE_ID]?.triggers;
   if (!Array.isArray(list)) return [];
-  return list.map(t => ({ ...defaultTrigger(), ...foundry.utils.deepClone(t), id: t.id ?? foundry.utils.randomID() }));
+  return list.filter(t => t && typeof t === "object" && !Array.isArray(t)).map(t => ({ ...defaultTrigger(), ...foundry.utils.deepClone(t), id: t.id ?? foundry.utils.randomID() }));
 }
 
 export function getState(tile) {
@@ -150,17 +151,28 @@ function frequencyOk(tile, trigger, token) {
 }
 
 /**
+ * Why this trigger would not fire for this token right now: a fixed reason code, or null when it fires.
+ * Rolls the trigger's chance when `roll` is set, so call it once per event.
+ * @returns {null|"moduleOff"|"triggerOff"|"tileInactive"|"appliesTo"|"combat"|"noTokenOnTile"|"frequency"|"chance"}
+ */
+export function fireBlocker(tile, trigger, token, { roll = true } = {}) {
+  if (!isEnabled()) return "moduleOff";
+  if (!trigger.enabled) return "triggerOff";
+  if (!tileActive(tile)) return "tileInactive";
+  if (!tokenMatches(trigger, token)) return "appliesTo";
+  if (!combatOk(trigger, token, tile.parent)) return "combat";
+  if (!tokenOnTileOk(tile, trigger)) return "noTokenOnTile";
+  if (!frequencyOk(tile, trigger, token)) return "frequency";
+  if (roll && Number(trigger.chance) < 100 && Math.random() * 100 >= Number(trigger.chance)) return "chance";
+  return null;
+}
+
+/**
  * Should this trigger fire for this token right now? Rolls the trigger's chance when `roll` is set,
  * so call it once per event.
  */
-export function shouldFire(tile, trigger, token, { roll = true } = {}) {
-  if (!isEnabled() || !trigger.enabled || !tileActive(tile)) return false;
-  if (!tokenMatches(trigger, token)) return false;
-  if (!combatOk(trigger, token, tile.parent)) return false;
-  if (!tokenOnTileOk(tile, trigger)) return false;
-  if (!frequencyOk(tile, trigger, token)) return false;
-  if (roll && Number(trigger.chance) < 100 && Math.random() * 100 >= Number(trigger.chance)) return false;
-  return true;
+export function shouldFire(tile, trigger, token, opts) {
+  return fireBlocker(tile, trigger, token, opts) === null;
 }
 
 /* -------------------------------------------- */
@@ -204,12 +216,15 @@ export function analyzeMovement(token, move) {
 
   const events = [];
   const seen = new Set();
+  const blocked = {};
+  const block = reason => { blocked[reason] = (blocked[reason] ?? 0) + 1; };
   let cut = null;
   for (const c of candidates) {
     if (cut !== null && c.i > cut) break;
     const key = `${c.tile.id}|${c.trigger.id}`;
     if (c.trigger.frequency !== "always" && seen.has(key)) continue;
-    if (!shouldFire(c.tile, c.trigger, token)) continue;
+    const reason = fireBlocker(c.tile, c.trigger, token);
+    if (reason) { block(reason); continue; }
     seen.add(key);
     events.push({ tileId: c.tile.id, triggerId: c.trigger.id, event: c.trigger.event });
     const last = c.i === samples.length - 1;
@@ -224,12 +239,13 @@ export function analyzeMovement(token, move) {
       for (const trigger of getTriggers(tile)) {
         if (!trigger.enabled || trigger.event !== "stop") continue;
         if (!inside(tile, trigger.detection)[restIndex]) continue;
-        if (!shouldFire(tile, trigger, token)) continue;
+        const reason = fireBlocker(tile, trigger, token);
+        if (reason) { block(reason); continue; }
         events.push({ tileId: tile.id, triggerId: trigger.id, event: "stop" });
       }
     }
   }
-  return { events, cut, samples };
+  return { events, cut, samples, candidates: candidates.length, blocked };
 }
 
 const WAYPOINT_KEYS = ["x", "y", "elevation", "width", "height", "shape", "action", "snapped", "explicit", "checkpoint"];
@@ -254,8 +270,17 @@ function onPreMoveToken(token, move, options) {
   }
   let result;
   try { result = analyzeMovement(token, move); }
-  catch (err) { console.error(`${MODULE_ID} | movement analysis failed`, err); return; }
+  catch (err) {
+    noteError("movementAnalysis");
+    crumb("engine.error", { code: "movementAnalysis" });
+    console.error(`${MODULE_ID} | movement analysis failed`, err);
+    return;
+  }
   if (!result) return;
+  crumb("movement.analyze", () => ({
+    candidates: result.candidates, events: result.events.length, cut: result.cut !== null,
+    ...Object.fromEntries(Object.entries(result.blocked).map(([k, n]) => [`blocked_${k}`, n]))
+  }));
 
   if (result.cut !== null) {
     const waypoints = truncatedWaypoints(result.samples, result.cut, move.passed.waypoints);
@@ -268,7 +293,11 @@ function onPreMoveToken(token, move, options) {
     };
     if (move.constrainOptions) opts.constrainOptions = foundry.utils.deepClone(move.constrainOptions);
     // Re-issue after this update has been rejected
-    setTimeout(() => token.move(waypoints, opts).catch(err => console.error(`${MODULE_ID} | re-issued move failed`, err)), 0);
+    setTimeout(() => token.move(waypoints, opts).catch(err => {
+      noteError("reissuedMove");
+      crumb("engine.error", { code: "reissuedMove" });
+      console.error(`${MODULE_ID} | re-issued move failed`, err);
+    }), 0);
     return false;
   }
   if (result.events.length) pendingMoves.set(move.id, result.events);
@@ -294,7 +323,9 @@ export function fireForToken(token, event) {
     for (const trigger of getTriggers(tile)) {
       if (trigger.event !== event) continue;
       if (!tokenInside(tile, token, token, trigger.detection)) continue;
-      if (!shouldFire(tile, trigger, token)) continue;
+      const reason = fireBlocker(tile, trigger, token);
+      crumb("trigger.evaluate", { event, fires: !reason, reason: reason ?? "none" });
+      if (reason) continue;
       dispatch({ sceneId: token.parent.id, tileId: tile.id, triggerId: trigger.id, event, tokenId: token.id });
     }
   }
@@ -378,12 +409,18 @@ export function fireRoundEvents(combat, prior, current) {
   if (!wanted.length) return;
   const turns = combat.turns ?? [];
   const passed = roundEventsPassed(prior, current, turns.length, count => initiativeSlot(turns, count), wanted);
+  crumb("round.events", { scenes: scenes.length, wanted: wanted.length, passed: passed.length, round: Number(current?.round) || 0, turns: turns.length });
   for (const p of passed) {
     const { scene, tile, trigger, event } = wanted[p.index];
     const key = `${tile.uuid}|${trigger.id}|${combat.id}`;
-    if ((roundsSeen.get(key) ?? 0) >= p.round) continue;
+    if ((roundsSeen.get(key) ?? 0) >= p.round) {
+      crumb("trigger.evaluate", { event, fires: false, reason: "roundSeen" });
+      continue;
+    }
     roundsSeen.set(key, p.round);
-    if (!shouldFire(tile, trigger, null)) continue;
+    const reason = fireBlocker(tile, trigger, null);
+    crumb("trigger.evaluate", { event, fires: !reason, reason: reason ?? "none" });
+    if (reason) continue;
     dispatch({ sceneId: scene.id, tileId: tile.id, triggerId: trigger.id, event, tokenId: null });
   }
 }
@@ -394,7 +431,11 @@ function onCombatTurnChange(combat, prior, current) {
   const cur = current?.combatantId ? combat.combatants.get(current.combatantId) : null;
   if (prev?.token && prior.combatantId !== current?.combatantId) fireForToken(prev.token, "turnEnd");
   try { fireRoundEvents(combat, prior, current); }
-  catch (err) { console.error(`${MODULE_ID} | round events failed`, err); }
+  catch (err) {
+    noteError("roundEvents");
+    crumb("engine.error", { code: "roundEvents" });
+    console.error(`${MODULE_ID} | round events failed`, err);
+  }
   if (cur?.token) fireForToken(cur.token, "turnStart");
 }
 
@@ -415,12 +456,15 @@ let warnedNoGM = 0;
 export function dispatch(payload) {
   if (game.user.isActiveGM) return handleFire(payload, game.user);
   if (!game.users.activeGM) {
+    noteError("noActiveGM");
+    crumb("dispatch.noGM", { event: ownId(payload?.event, EVENTS) });
     if (Date.now() - warnedNoGM > 30000) {
       warnedNoGM = Date.now();
       ui.notifications.warn("DXTT.Notify.NoGM", { localize: true });
     }
     return;
   }
+  crumb("socket.relay.send", { type: "fire", event: ownId(payload?.event, EVENTS), hasToken: !!payload?.tokenId, force: payload?.force === true });
   game.socket.emit(SOCKET, { type: "fire", ...payload });
 }
 
@@ -459,7 +503,8 @@ function runaway(tokenId) {
 
 /**
  * May `sender` set off this trigger with this event and token? The payload is whatever the sending client
- * chose, so everything in it is checked here, on the active GM.
+ * chose, so everything in it is checked here, on the active GM. Returns null when it may, else a fixed
+ * reason code (see fireBlocker for the condition codes).
  * - `force` counts only from a GM. A GM-forced manual fire skips the conditions (disarmed and switched-off
  *   tiles too), as the ▶ button and api.fire always did.
  * - The event must be the trigger's own one; only a GM may fire any trigger as "manual".
@@ -468,20 +513,20 @@ function runaway(tokenId) {
  *   click range.
  * - Unless forced, the trigger's conditions are checked again (enabled, tile active, "Applies to", combat,
  *   frequency). The chance was rolled once by the client that saw the event and is not rolled again.
- * @returns {boolean}
+ * @returns {string|null}
  */
-function fireAllowed(sender, tile, trigger, event, token, force) {
+function fireRefusal(sender, tile, trigger, event, token, force) {
   const gm = sender.isGM;
-  if (typeof event !== "string" || !Object.hasOwn(EVENTS, event)) return false;
-  if (event !== trigger.event && !(gm && event === "manual")) return false;
+  if (typeof event !== "string" || !Object.hasOwn(EVENTS, event)) return "badEvent";
+  if (event !== trigger.event && !(gm && event === "manual")) return "eventMismatch";
   if (!gm) {
-    if (event === "turnStart" || event === "turnEnd" || isRoundEvent(event)) return false;
-    if ((EVENTS[event].movement || event === "click") && !token) return false;
-    if (token && !token.testUserPermission(sender, "OWNER")) return false;
-    if (event === "click" && !tokenInRange(token, tile, trigger.clickRange)) return false;
+    if (event === "turnStart" || event === "turnEnd" || isRoundEvent(event)) return "gmOnlyEvent";
+    if ((EVENTS[event].movement || event === "click") && !token) return "noToken";
+    if (token && !token.testUserPermission(sender, "OWNER")) return "notOwner";
+    if (event === "click" && !tokenInRange(token, tile, trigger.clickRange)) return "outOfRange";
   }
-  if (gm && force === true) return true;
-  return shouldFire(tile, trigger, token, { roll: false });
+  if (gm && force === true) return null;
+  return fireBlocker(tile, trigger, token, { roll: false });
 }
 
 /**
@@ -494,16 +539,32 @@ async function handleFire({ sceneId, tileId, triggerId, event, tokenId = null, f
   const scene = game.scenes.get(sceneId);
   const tile = scene?.tiles.get(tileId);
   const trigger = tile ? getTriggers(tile).find(t => t.id === triggerId) : null;
-  if (!tile || !trigger) return;
-  if (tokenId !== null && typeof tokenId !== "string") return;
+  // Only the module's own event ids go into a breadcrumb, never what the sender typed in
+  const eventId = typeof event === "string" && Object.hasOwn(EVENTS, event) ? event : "invalid";
+  const remote = sender !== game.user;
+  if (!tile || !trigger) {
+    crumb("trigger.refused", { event: eventId, reason: tile ? "noTrigger" : "noTile", remote });
+    return;
+  }
+  if (tokenId !== null && typeof tokenId !== "string") {
+    crumb("trigger.refused", { event: eventId, reason: "badTokenId", remote });
+    return;
+  }
   const token = tokenId ? scene.tokens.get(tokenId) ?? null : null;
   // The token must be on the tile's scene. Only a GM's manual fire runs without it, as it always did.
-  if (tokenId && !token && !(sender.isGM && event === "manual")) return;
-  if (!fireAllowed(sender, tile, trigger, event, token, force)) {
+  if (tokenId && !token && !(sender.isGM && event === "manual")) {
+    crumb("trigger.refused", { event: eventId, reason: "tokenNotOnScene", remote });
+    return;
+  }
+  const refusal = fireRefusal(sender, tile, trigger, event, token, force);
+  if (refusal) {
+    crumb("trigger.refused", { event: eventId, reason: refusal, remote, senderIsGM: sender.isGM === true });
     console.debug(`${MODULE_ID} | refused a "${event}" fire of trigger ${triggerId} from ${sender.name}`);
     return;
   }
   if (runaway(tokenId)) {
+    noteError("runaway");
+    crumb("trigger.refused", { event: eventId, reason: "runaway", remote });
     ui.notifications.warn(game.i18n.format("DXTT.Notify.Runaway", { token: token?.name ?? "?" }));
     return;
   }
@@ -537,6 +598,15 @@ export async function execute(tile, trigger, { token = null, user = game.user, e
     tile, trigger, token, actor: token?.actor ?? null, user, event,
     scene: tile.parent, depth: 0, vars: {}
   };
+  crumb("trigger.fire", () => {
+    const actions = Array.isArray(trigger.actions) ? trigger.actions : [];
+    const types = [...new Set(actions.filter(a => a && !a.disabled).map(a => actionTypeId(a.type)))];
+    return {
+      event: ownId(event, EVENTS), triggerEvent: ownId(trigger.event, EVENTS),
+      frequency: ownId(trigger.frequency, FREQUENCIES), appliesTo: ownId(trigger.appliesTo, APPLIES_TO),
+      hasToken: !!token, remote: user !== game.user, actions: actions.length, actionTypes: types.join(",")
+    };
+  });
   Hooks.callAll(`${MODULE_ID}.fire`, ctx);
   await runActions(trigger.actions, ctx);
 }
@@ -594,6 +664,7 @@ function socketSender(extra) {
 
 function onSocket(msg, ...extra) {
   if (!msg || typeof msg !== "object") return;
+  if (["fire", "pan", "shake"].includes(msg.type)) crumb("socket.relay.receive", { type: msg.type, activeGM: game.user.isActiveGM === true });
   switch (msg.type) {
     case "fire": {
       if (!game.user.isActiveGM) return;
@@ -618,6 +689,22 @@ function onSocket(msg, ...extra) {
       break;
     }
   }
+}
+
+/** The module's own "Fires" and "Applies to" values (anything else is reported as "other"). */
+const FREQUENCIES = ["always", "once", "oncePerToken"];
+const APPLIES_TO = ["players", "all", "npcs", "actors"];
+
+/** Runtime state for the Debug Recorder snapshot: sizes of the engine's in-memory queues and caches. */
+export function engineState() {
+  return {
+    inflight: inflight.size,
+    pendingMoves: pendingMoves.size,
+    roundsSeen: roundsSeen.size,
+    runawayWatch: recentFires.size,
+    warnedNoGM: warnedNoGM > 0,
+    warnedNoSender
+  };
 }
 
 export function registerEngine() {

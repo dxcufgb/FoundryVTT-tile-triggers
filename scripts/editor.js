@@ -10,6 +10,7 @@ import { MODULE_ID, EVENTS, MAX_DEPTH, defaultTrigger } from "./constants.js";
 import { ACTIONS, GROUPS, newAction, normalizeAction, tileName } from "./actions.js";
 import { getTriggers, getState, fire, resetState, triggerTiles } from "./engine.js";
 import { isDisarmed, setDisarmed } from "./disarm.js";
+import { crumb, ownId } from "./debug-recorder.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 const L = key => game.i18n.localize(key);
@@ -197,6 +198,14 @@ export class TileTriggersEditor extends HandlebarsApplicationMixin(ApplicationV2
       dirty: this.dirty,
       canPaste: !!TileTriggersEditor.clipboard
     };
+  }
+
+  _onRender(context, options) {
+    super._onRender?.(context, options);
+    crumb("app.render", () => ({
+      hasTile: !!this.tile, dirty: this.dirty, triggers: this.data?.triggers?.length ?? 0,
+      tiles: canvas.scene?.tiles.size ?? 0, otherScene: !!this.tile && this.tile.parent?.id !== canvas.scene?.id
+    }));
   }
 
   _onFirstRender(context, options) {
@@ -473,6 +482,7 @@ export class TileTriggersEditor extends HandlebarsApplicationMixin(ApplicationV2
       case "fire": {
         if (this.dirty) await this.#save();
         const token = canvas.tokens?.controlled[0]?.document ?? null;
+        crumb("app.manualFire", { event: ownId(t.event, EVENTS), hasToken: !!token });
         await fire(this.tile, t.id, { token, force: true });
         ui.notifications.info(game.i18n.format("DXTT.Notify.Fired", { trigger: t.name || L(`DXTT.Event.${t.event}`), token: token?.name ?? "—" }));
         return;
@@ -622,6 +632,11 @@ export class TileTriggersEditor extends HandlebarsApplicationMixin(ApplicationV2
       [`flags.${MODULE_ID}.shape`]: this.data.shape,
       [`flags.${MODULE_ID}.disabled`]: !this.data.active
     });
+    crumb("app.save", () => ({
+      triggers: this.data.triggers.length,
+      actions: this.data.triggers.reduce((n, t) => n + (t.actions?.length ?? 0), 0),
+      active: !!this.data.active
+    }));
     this.dirty = false;
     this.#load(tile);
     ui.notifications.info(L("DXTT.Notify.Saved"));

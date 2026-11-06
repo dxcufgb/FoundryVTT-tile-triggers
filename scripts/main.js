@@ -25,13 +25,14 @@
  * "dxcufgbs-tile-triggers.disarm" (tile, disarmed) whenever a tile is disarmed or re-armed.
  */
 
-import { MODULE_ID, QUERY_ROLL, EVENTS } from "./constants.js";
-import { registerEngine, getTriggers, fire, resetState } from "./engine.js";
-import { ACTIONS, registerAction, runActions, promptRoll, tileName, registerCanvasEffectsAction, CANVAS_EFFECTS_ID } from "./actions.js";
+import { MODULE_ID, QUERY_ROLL, EVENTS, MAX_DEPTH } from "./constants.js";
+import { registerEngine, getTriggers, getState, fire, resetState, tileActive, engineState } from "./engine.js";
+import { ACTIONS, registerAction, runActions, promptRoll, tileName, registerCanvasEffectsAction, CANVAS_EFFECTS_ID, actionTypeId, actionTypeCounts } from "./actions.js";
 import { TileTriggersEditor } from "./editor.js";
 import { registerCanvas, drawIndicators } from "./canvas.js";
 import { registerDisarm, isDisarmed, setDisarmed } from "./disarm.js";
 import { registerShake } from "./shake.js";
+import { registerDebugRecorder, crumb, errorState, ownId } from "./debug-recorder.js";
 
 /** Settings every user sees, also players (the others are GM-only, see the "setup" hook). */
 const PLAYER_SETTINGS = new Set(["allowShake"]);
@@ -47,6 +48,79 @@ function frozenCopy(value) {
     return Object.freeze(Object.fromEntries(Object.entries(value).map(([k, v]) => [k, frozenCopy(v)])));
   }
   return value;
+}
+
+/** Add one to a counter in a plain object. */
+const bump = (obj, key) => { obj[key] = (obj[key] ?? 0) + 1; };
+
+/**
+ * The triggers on a scene, counted for the Debug Recorder: tiles, triggers by event and "Fires", action types
+ * (this module's own type ids; other modules' types count as "custom"), disarmed and switched-off tiles.
+ * Counts only: no names, texts, ids or paths.
+ */
+function sceneTriggerStats(scene) {
+  const stats = {
+    tiles: scene?.tiles.size ?? 0, triggerTiles: 0, disarmedTiles: 0, inactiveTiles: 0,
+    triggers: 0, enabledTriggers: 0, firedTriggers: 0, actions: 0,
+    byEvent: {}, byFrequency: {}, actionTypes: {}
+  };
+  // Nested success / fail lists are counted down to the depth runActions runs (MAX_DEPTH + 2), no deeper
+  const countActions = (list, depth = 0) => {
+    if (depth > MAX_DEPTH + 2) return;
+    for (const a of Array.isArray(list) ? list : []) {
+      if (!a || typeof a !== "object") continue;
+      stats.actions++;
+      bump(stats.actionTypes, actionTypeId(a.type));
+      if (Array.isArray(a.success)) countActions(a.success, depth + 1);
+      if (Array.isArray(a.fail)) countActions(a.fail, depth + 1);
+    }
+  };
+  for (const tile of scene?.tiles ?? []) {
+    const triggers = getTriggers(tile);
+    if (!triggers.length) continue;
+    stats.triggerTiles++;
+    if (isDisarmed(tile)) stats.disarmedTiles++;
+    else if (!tileActive(tile)) stats.inactiveTiles++;
+    const state = getState(tile);
+    for (const t of triggers) {
+      stats.triggers++;
+      if (t.enabled) stats.enabledTriggers++;
+      if (state[t.id]?.count > 0) stats.firedTriggers++;
+      bump(stats.byEvent, ownId(t.event, EVENTS));
+      bump(stats.byFrequency, ownId(t.frequency, ["always", "once", "oncePerToken"]));
+      countActions(t.actions);
+    }
+  }
+  return stats;
+}
+
+/** The Debug Recorder snapshot: what helps debug Tile Triggers on this client. Plain JSON, no names or paths. */
+function debugSnapshot() {
+  let scenesWithTriggers = 0;
+  for (const scene of game.scenes ?? []) if (scene.tiles.some(t => getTriggers(t).length)) scenesWithTriggers++;
+  const editor = TileTriggersEditor.instance;
+  return {
+    isGM: game.user?.isGM === true,
+    isActiveGM: game.user?.isActiveGM === true,
+    activeGMPresent: !!game.users?.activeGM,
+    integrations: {
+      sequencer: !!game.modules.get("sequencer")?.active,
+      canvasEffects: !!game.modules.get(CANVAS_EFFECTS_ID)?.active,
+      canvasEffectAction: Object.hasOwn(ACTIONS, "canvasEffectArea")
+    },
+    actionTypes: actionTypeCounts(),
+    scenesWithTriggers,
+    viewedScene: canvas?.scene ? sceneTriggerStats(canvas.scene) : null,
+    editor: {
+      open: !!editor?.rendered,
+      hasTile: !!editor?.tile,
+      dirty: !!editor?.dirty,
+      onOtherScene: !!editor?.tile && editor.tile.parent?.id !== canvas?.scene?.id,
+      clipboardTriggers: Array.isArray(TileTriggersEditor.clipboard) ? TileTriggersEditor.clipboard.length : 0
+    },
+    engine: engineState(),
+    errors: errorState()
+  };
 }
 
 /* -------------------------------------------- */
@@ -115,6 +189,9 @@ Hooks.once("init", () => {
       get events() { return frozenCopy(EVENTS); }
     };
   }
+
+  // Optional: Dxcufgb's Debug Recorder (does nothing without it)
+  registerDebugRecorder(debugSnapshot);
 });
 
 // Settings are GM-only, except "Allow screen shake": players see only that one in Configure Settings.
